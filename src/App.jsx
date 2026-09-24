@@ -10,7 +10,7 @@ import {
 import * as XLSX from 'xlsx'
 import { cloudEnabled, supabase } from './supabase.js'
 
-const START = new Date('2026-10-05T00:00:00')
+const START = new Date('2026-09-21T00:00:00')
 const DAY_NAMES = ['Ma','Di','Wo','Do','Vr','Za','Zo']
 const FULL_DAYS = ['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag']
 const emptyDay = () => ({ weight:'', calories:'', strength:'', energy:'', stress:'', sleep:'', steps:'' })
@@ -74,6 +74,10 @@ export default function App(){
   const [busy,setBusy]=useState(false)
   const [syncState,setSyncState]=useState('idle')
   const [lastSync,setLastSync]=useState(null)
+  const [dirtyWeekNo,setDirtyWeekNo]=useState(null)
+  const [autoSaveVersion,setAutoSaveVersion]=useState(0)
+  const [autoSaveState,setAutoSaveState]=useState('idle')
+  const [autoSaveAt,setAutoSaveAt]=useState(null)
 
   const current = weeks.find(w=>w.week===selectedWeek) || emptyWeek(selectedWeek)
   const summaries = useMemo(()=>weeks.map(summarize).sort((a,b)=>a.week-b.week),[weeks])
@@ -83,6 +87,23 @@ export default function App(){
   const phase = phaseForWeek(latestWeek)
 
   useEffect(()=>localStorage.setItem('sv2_layout_weeks',JSON.stringify(weeks)),[weeks])
+  useEffect(()=>{
+    if(!autoSaveVersion || dirtyWeekNo == null) return
+    setAutoSaveState('saving')
+    const timer=setTimeout(async()=>{
+      const week=weeks.find(w=>w.week===dirtyWeekNo)
+      if(!week) return
+      try{
+        if(user) await saveCloud(week)
+        setAutoSaveState('saved')
+        setAutoSaveAt(new Date())
+      }catch(e){
+        setAutoSaveState('error')
+        setMsg(`Automatisch opslaan mislukt: ${e.message}`)
+      }
+    },900)
+    return ()=>clearTimeout(timer)
+  },[autoSaveVersion,dirtyWeekNo,weeks,user])
   useEffect(()=>{
     if(!cloudEnabled) return
     supabase.auth.getSession().then(({data})=>setUser(data.session?.user||null))
@@ -124,14 +145,18 @@ export default function App(){
     if(idx<0){arr.push(emptyWeek(selectedWeek)); idx=arr.length-1}
     return idx
   }
+  function markForAutoSave(){
+    setDirtyWeekNo(selectedWeek)
+    setAutoSaveVersion(v=>v+1)
+    setAutoSaveState('pending')
+  }
   function updateDay(i,key,value){
     setWeeks(prev=>{ const arr=[...prev]; const idx=ensureWeek(arr); arr[idx]={...arr[idx],days:arr[idx].days.map((d,j)=>j===i?{...d,[key]:value}:d)}; return arr.sort((a,b)=>a.week-b.week) })
+    markForAutoSave()
   }
   function updateWeek(key,value){
     setWeeks(prev=>{ const arr=[...prev]; const idx=ensureWeek(arr); arr[idx]={...arr[idx],[key]:value}; return arr.sort((a,b)=>a.week-b.week) })
-  }
-  async function saveSelected(){
-    try{ await saveCloud(current); setMsg(user?'Opgeslagen en gesynchroniseerd.':'Opgeslagen op dit apparaat.') }catch(e){setMsg(e.message)}
+    markForAutoSave()
   }
   async function auth(mode){
     if(!cloudEnabled){setMsg('Supabase is nog niet gekoppeld in Netlify.');return}
@@ -210,6 +235,13 @@ export default function App(){
   }
 
   const [a,b]=weekDates(selectedWeek)
+  const autoSaveText = autoSaveState==='saving' || autoSaveState==='pending'
+    ? 'Opslaan…'
+    : autoSaveState==='error'
+      ? 'Opslaan mislukt'
+      : autoSaveAt
+        ? `${user?'Opgeslagen & gesynchroniseerd':'Opgeslagen'} ✓ · ${autoSaveAt.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}`
+        : 'Automatisch opslaan actief'
   const nav=[['dashboard',Home,'Dashboard'],['checkin',CalendarDays,'Check-in'],['progress',BarChart3,'Voortgang'],['history',History,'Historie'],['export',Download,'Export'],['coach',MessageCircle,'Coach'],['more',Settings,'Instellingen']]
 
   return <div className="app-shell">
@@ -226,7 +258,7 @@ export default function App(){
         <WeekSelector selected={selectedWeek} setSelected={setSelectedWeek} max={Math.max(latestWeek+1,selectedWeek)} dates={[a,b]}/>
         <div className="day-tabs">{DAY_NAMES.map((d,i)=><button key={d} className={activeDay===i?'active':''} onClick={()=>setActiveDay(i)}><b>{d}</b><small>{dateShort(new Date(a.getFullYear(),a.getMonth(),a.getDate()+i))}</small></button>)}</div>
         <DayForm day={activeDay} data={current.days[activeDay]} onChange={(k,v)=>updateDay(activeDay,k,v)} week={current} onWeek={updateWeek}/>
-        <section className="card note-card"><label>Opmerking bij deze week<textarea value={current.note} onChange={e=>updateWeek('note',e.target.value)} placeholder="Bijzonderheden, vakantie, werkstress, training..."/></label><div className="actions"><button className="primary" onClick={saveSelected}>Opslaan</button><span className="status-text">{msg}</span></div></section>
+        <section className="card note-card"><label>Opmerking bij deze week<textarea value={current.note} onChange={e=>updateWeek('note',e.target.value)} placeholder="Bijzonderheden, vakantie, werkstress, training..."/></label><div className={`autosave-status ${autoSaveState==='error'?'error':''}`}><CheckCircle2 size={17}/><span>{autoSaveText}</span></div></section>
       </>}
       {tab==='progress' && <Progress summaries={summaries}/>} 
       {tab==='history' && <HistoryPage weeks={weeks} summaries={summaries} openWeek={w=>{setSelectedWeek(w);setTab('checkin')}}/>}

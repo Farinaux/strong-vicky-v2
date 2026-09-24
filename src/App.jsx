@@ -68,8 +68,12 @@ export default function App(){
   const [user,setUser]=useState(null)
   const [email,setEmail]=useState('')
   const [password,setPassword]=useState('')
+  const [confirmPassword,setConfirmPassword]=useState('')
+  const [authView,setAuthView]=useState('login')
   const [msg,setMsg]=useState('')
   const [busy,setBusy]=useState(false)
+  const [syncState,setSyncState]=useState('idle')
+  const [lastSync,setLastSync]=useState(null)
 
   const current = weeks.find(w=>w.week===selectedWeek) || emptyWeek(selectedWeek)
   const summaries = useMemo(()=>weeks.map(summarize).sort((a,b)=>a.week-b.week),[weeks])
@@ -82,17 +86,32 @@ export default function App(){
   useEffect(()=>{
     if(!cloudEnabled) return
     supabase.auth.getSession().then(({data})=>setUser(data.session?.user||null))
-    const {data:sub}=supabase.auth.onAuthStateChange((_e,session)=>setUser(session?.user||null))
+    const {data:sub}=supabase.auth.onAuthStateChange((event,session)=>{
+      setUser(session?.user||null)
+      if(event==='PASSWORD_RECOVERY') setAuthView('reset')
+    })
     return ()=>sub.subscription.unsubscribe()
   },[])
-  useEffect(()=>{ if(user) loadCloud() },[user])
+  useEffect(()=>{ if(user) syncCloud() },[user])
 
-  async function loadCloud(){
+  async function syncCloud(){
+    if(!user || !cloudEnabled) return
+    setSyncState('syncing')
     const {data,error}=await supabase.from('checkins').select('*').eq('user_id',user.id).order('week_no')
-    if(error){setMsg(error.message); return}
-    if(data?.length){
-      const mapped=data.map(r=>({week:r.week_no,days:r.days||Array.from({length:7},emptyDay),hip:r.hip??'',navel:r.navel??'',note:r.note??'',coach:r.coach??''}))
-      setWeeks(mapped); setSelectedWeek(mapped.at(-1).week)
+    if(error){setSyncState('error');setMsg(`Synchronisatie mislukt: ${error.message}`);return}
+    try{
+      if(data?.length){
+        const mapped=data.map(r=>({week:r.week_no,days:r.days||Array.from({length:7},emptyDay),hip:r.hip??'',navel:r.navel??'',note:r.note??'',coach:r.coach??''}))
+        setWeeks(mapped); setSelectedWeek(mapped.at(-1).week)
+        setMsg('Cloudgegevens geladen. Synchronisatie is actief.')
+      }else{
+        for(const week of weeks) await saveCloud(week)
+        setMsg('Account gekoppeld. Bestaande gegevens zijn naar de cloud gekopieerd.')
+      }
+      setLastSync(new Date())
+      setSyncState('synced')
+    }catch(e){
+      setSyncState('error'); setMsg(`Synchronisatie mislukt: ${e.message}`)
     }
   }
   async function saveCloud(week){
@@ -116,9 +135,54 @@ export default function App(){
   }
   async function auth(mode){
     if(!cloudEnabled){setMsg('Supabase is nog niet gekoppeld in Netlify.');return}
+    const cleanEmail=email.trim().toLowerCase()
+    if(!cleanEmail){setMsg('Vul eerst je e-mailadres in.');return}
+    if(mode!=='forgot' && password.length<8){setMsg('Gebruik een wachtwoord van minimaal 8 tekens.');return}
+    if(mode==='signup' && password!==confirmPassword){setMsg('De twee wachtwoorden zijn niet gelijk.');return}
     setBusy(true); setMsg('')
-    const result = mode==='signup' ? await supabase.auth.signUp({email,password}) : await supabase.auth.signInWithPassword({email,password})
-    setMsg(result.error?.message || (mode==='signup'?'Account aangemaakt. Controleer eventueel je e-mail.':'Ingelogd.'))
+    try{
+      if(mode==='signup'){
+        const {data,error}=await supabase.auth.signUp({
+          email:cleanEmail, password,
+          options:{emailRedirectTo:window.location.origin}
+        })
+        if(error) throw error
+        if(data.session){
+          setMsg('Account aangemaakt en ingelogd. Synchronisatie wordt gestart.')
+        }else{
+          setMsg('Account aangemaakt. Open de bevestigingsmail van Supabase en klik op de link. Daarna kun je inloggen.')
+          setAuthView('login')
+        }
+      }else if(mode==='login'){
+        const {error}=await supabase.auth.signInWithPassword({email:cleanEmail,password})
+        if(error) throw error
+        setMsg('Ingelogd. Synchronisatie wordt gestart.')
+      }else if(mode==='forgot'){
+        const {error}=await supabase.auth.resetPasswordForEmail(cleanEmail,{redirectTo:`${window.location.origin}/?reset=1`})
+        if(error) throw error
+        setMsg('Je ontvangt een e-mail met een link om een nieuw wachtwoord in te stellen.')
+      }else if(mode==='reset'){
+        if(password!==confirmPassword){setMsg('De twee wachtwoorden zijn niet gelijk.');return}
+        const {error}=await supabase.auth.updateUser({password})
+        if(error) throw error
+        setMsg('Je wachtwoord is gewijzigd.')
+        setAuthView('login')
+      }
+    }catch(e){
+      const t=(e.message||'').toLowerCase()
+      if(t.includes('invalid login credentials')) setMsg('E-mailadres of wachtwoord klopt niet.')
+      else if(t.includes('email not confirmed')) setMsg('Je e-mailadres is nog niet bevestigd. Open eerst de bevestigingsmail van Supabase.')
+      else if(t.includes('already registered')) setMsg('Voor dit e-mailadres bestaat al een account. Kies Inloggen.')
+      else setMsg(e.message||'Er ging iets mis bij het account.')
+    }finally{setBusy(false)}
+  }
+
+  async function resendConfirmation(){
+    const cleanEmail=email.trim().toLowerCase()
+    if(!cleanEmail){setMsg('Vul eerst je e-mailadres in.');return}
+    setBusy(true); setMsg('')
+    const {error}=await supabase.auth.resend({type:'signup',email:cleanEmail,options:{emailRedirectTo:window.location.origin}})
+    setMsg(error?error.message:'Bevestigingsmail opnieuw verzonden.')
     setBusy(false)
   }
   async function aiFeedback(){
@@ -168,7 +232,7 @@ export default function App(){
       {tab==='history' && <HistoryPage weeks={weeks} summaries={summaries} openWeek={w=>{setSelectedWeek(w);setTab('checkin')}}/>}
       {tab==='export' && <ExportPage exportExcel={exportExcel}/>} 
       {tab==='coach' && <CoachPage week={selectedWeek} current={current} onWeek={updateWeek} aiFeedback={aiFeedback} busy={busy}/>} 
-      {tab==='more' && <SettingsPage cloudEnabled={cloudEnabled} user={user} email={email} setEmail={setEmail} password={password} setPassword={setPassword} auth={auth} busy={busy} msg={msg}/>} 
+      {tab==='more' && <SettingsPage cloudEnabled={cloudEnabled} user={user} email={email} setEmail={setEmail} password={password} setPassword={setPassword} confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword} authView={authView} setAuthView={setAuthView} auth={auth} resendConfirmation={resendConfirmation} syncCloud={syncCloud} syncState={syncState} lastSync={lastSync} busy={busy} msg={msg}/>} 
     </main>
 
     <nav className="mobile-nav">{[['dashboard',Home,'Home'],['checkin',CalendarDays,'Check-in'],['progress',BarChart3,'Voortgang'],['history',History,'Historie'],['more',Settings,'Meer']].map(([id,Icon,label])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}><Icon size={21}/><span>{label}</span></button>)}</nav>
@@ -214,6 +278,28 @@ function WeekTable({summaries}){return <div className="table-wrap"><table><thead
 function HistoryPage({weeks,summaries,openWeek}){return <><PageTitle title="Historie" sub="Open een eerdere week om gegevens terug te zien of aan te passen."/><div className="history-list">{[...weeks].sort((a,b)=>b.week-a.week).map(w=>{const s=summaries.find(x=>x.week===w.week);const [a,b]=weekDates(w.week);return <button key={w.week} onClick={()=>openWeek(w.week)}><span><b>Week {w.week}</b><small>{dateShort(a)} — {dateShort(b)}</small></span><strong>{fmt(s?.weight)} kg</strong><ChevronRight/></button>})}</div></>}
 function ExportPage({exportExcel}){return <><PageTitle title="Export" sub="Exporteer je voortgang naar Excel."/><section className="card export-card"><Download size={34}/><div><h2>Excel-export</h2><p>Weekoverzicht, dagdata en coachfeedback in één bestand.</p></div><button className="primary" onClick={exportExcel}>Exporteren naar Excel</button></section></>}
 function CoachPage({week,current,onWeek,aiFeedback,busy}){return <><PageTitle title="Strong Vicky Coach" sub={`Eerlijke feedback op Week ${week}, zonder suikerlaag.`}/><section className="card coach-card"><div className="coach-icon"><Sparkles/></div><div><h2>Coachanalyse</h2><div className="coach-text">{current.coach||'Nog geen analyse voor deze week. Genereer feedback zodra de week voldoende gegevens bevat.'}</div><div className="actions"><button className="primary" onClick={aiFeedback} disabled={busy}>{busy?'Analyseren...':'Genereer coachfeedback'}</button><button className="secondary" onClick={()=>onWeek('coach','')}>Wis feedback</button></div></div></section></>}
-function SettingsPage({cloudEnabled,user,email,setEmail,password,setPassword,auth,busy,msg}){return <><PageTitle title="Instellingen" sub="Cloud-sync en accountstatus."/><section className="card status-card"><h2>Verbindingsstatus</h2><Status label="Netlify app" ok/><Status label="Supabase cloud" ok={cloudEnabled}/><Status label="Account ingelogd" ok={Boolean(user)}/><Status label="GPT Coach functie" ok/></section><section className="card auth-card"><h2>{user?'Account':'Inloggen'}</h2>{user?<><p>Ingelogd als <b>{user.email}</b>.</p><button className="secondary" onClick={()=>supabase.auth.signOut()}><LogOut size={18}/> Uitloggen</button></>:<><label>E-mail<input value={email} onChange={e=>setEmail(e.target.value)} type="email"/></label><label>Wachtwoord<input value={password} onChange={e=>setPassword(e.target.value)} type="password"/></label><div className="actions"><button className="primary" disabled={busy} onClick={()=>auth('login')}><LogIn size={18}/> Inloggen</button><button className="secondary" disabled={busy} onClick={()=>auth('signup')}>Account maken</button></div></>}<small className="status-text">{msg}</small></section></>}
-function Status({label,ok}){return <div className="status-row"><CheckCircle2 className={ok?'ok':''}/><span><b>{label}</b><small>{ok?'Gereed':'Nog configureren'}</small></span></div>}
+function SettingsPage({cloudEnabled,user,email,setEmail,password,setPassword,confirmPassword,setConfirmPassword,authView,setAuthView,auth,resendConfirmation,syncCloud,syncState,lastSync,busy,msg}){
+  const syncLabel = syncState==='syncing'?'Bezig met synchroniseren':syncState==='error'?'Synchronisatieprobleem':user?'Synchronisatie actief':'Inloggen vereist'
+  const syncTime = lastSync ? lastSync.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : null
+  return <><PageTitle title="Instellingen" sub="Account en synchronisatie tussen iPhone, iPad en Mac."/>
+    <section className="card status-card"><h2>Verbindingsstatus</h2><Status label="Netlify app" ok/><Status label="Supabase cloud" ok={cloudEnabled}/><Status label="Account ingelogd" ok={Boolean(user)}/><Status label="Cloud synchronisatie" ok={Boolean(user)&&syncState!=='error'} text={syncTime?`${syncLabel} · ${syncTime}`:syncLabel}/><Status label="GPT Coach functie" ok/></section>
+    <section className="card auth-card">
+      {user ? <><div className="account-head"><div><h2>Account</h2><p>Ingelogd als <b>{user.email}</b>.</p></div><div className="cloud-badge"><Cloud size={17}/> Sync actief</div></div><p className="auth-help">Gebruik hetzelfde account op je iPhone, iPad en Mac. Je check-ins worden via Supabase gedeeld.</p><div className="actions"><button className="primary" disabled={busy||syncState==='syncing'} onClick={syncCloud}><Cloud size={18}/>{syncState==='syncing'?'Synchroniseren...':'Synchroniseer nu'}</button><button className="secondary" onClick={()=>supabase.auth.signOut()}><LogOut size={18}/> Uitloggen</button></div></> : <>
+        <div className="auth-switch"><button className={authView==='login'?'active':''} onClick={()=>setAuthView('login')}>Inloggen</button><button className={authView==='signup'?'active':''} onClick={()=>setAuthView('signup')}>Account maken</button></div>
+        {authView==='forgot' ? <><h2>Wachtwoord vergeten</h2><p className="auth-help">Vul je e-mailadres in. Je ontvangt van Supabase een herstel-link.</p></> : authView==='reset' ? <><h2>Nieuw wachtwoord</h2><p className="auth-help">Kies een nieuw wachtwoord van minimaal 8 tekens.</p></> : <><h2>{authView==='signup'?'Nieuw Strong Vicky-account':'Welkom terug'}</h2><p className="auth-help">{authView==='signup'?'Na registratie ontvang je mogelijk eerst een bevestigingsmail.':'Log in met hetzelfde account op al je apparaten.'}</p></>}
+        {authView!=='reset' && <label>E-mail<input value={email} onChange={e=>setEmail(e.target.value)} type="email" autoComplete="email" placeholder="jouw@email.nl"/></label>}
+        {authView!=='forgot' && <label>Wachtwoord<input value={password} onChange={e=>setPassword(e.target.value)} type="password" autoComplete={authView==='login'?'current-password':'new-password'} placeholder="Minimaal 8 tekens"/></label>}
+        {(authView==='signup'||authView==='reset') && <label>Herhaal wachtwoord<input value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} type="password" autoComplete="new-password"/></label>}
+        <div className="actions">
+          {authView==='login' && <><button className="primary" disabled={busy} onClick={()=>auth('login')}><LogIn size={18}/>{busy?'Bezig...':'Inloggen'}</button><button className="text-button" onClick={()=>setAuthView('forgot')}>Wachtwoord vergeten?</button></>}
+          {authView==='signup' && <><button className="primary" disabled={busy} onClick={()=>auth('signup')}>{busy?'Bezig...':'Account maken'}</button><button className="text-button" onClick={resendConfirmation}>Bevestigingsmail opnieuw sturen</button></>}
+          {authView==='forgot' && <><button className="primary" disabled={busy} onClick={()=>auth('forgot')}>Stuur herstelmail</button><button className="secondary" onClick={()=>setAuthView('login')}>Terug</button></>}
+          {authView==='reset' && <button className="primary" disabled={busy} onClick={()=>auth('reset')}>Nieuw wachtwoord opslaan</button>}
+        </div>
+      </>}
+      {msg && <div className="auth-message">{msg}</div>}
+    </section>
+  </>
+}
+function Status({label,ok,text}){return <div className="status-row"><CheckCircle2 className={ok?'ok':''}/><span><b>{label}</b><small>{text||(ok?'Gereed':'Nog configureren')}</small></span></div>}
 function PageTitle({title,sub}){return <header className="page-title"><h1>{title}</h1><p>{sub}</p></header>}

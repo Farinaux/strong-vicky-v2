@@ -19,3 +19,4 @@ Voor AI Coach:
 
 ## Supabase
 Voer `supabase/setup.sql` uit in de SQL Editor.
+Redeploy 24-09

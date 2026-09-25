@@ -24,7 +24,8 @@
 @media(max-width:600px){.week-jump{display:grid;grid-template-columns:1fr}.week-jump label{min-width:0}.current-week-button{width:100%}}
 
 /* Coach centralisatie + nieuwe Export-header */
-.export-subhero{background-image:url('/images/export-hero.jpeg');background-position:center 52%}
+.export-subhero{background-image:url('/images/export-hero.png');background-position:center 52%}
+.coach-subhero{background-image:url('/images/coach-hero.jpeg');background-position:center 48%}
 .coach-overview{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 .coach-overview>div{display:grid;gap:5px;padding:12px 14px;border:1px solid #eee3dd;border-radius:14px;background:#fcfaf8}
 .coach-overview span{font-size:11px;color:var(--muted)}

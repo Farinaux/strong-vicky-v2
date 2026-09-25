@@ -25,6 +25,15 @@ const fmt = (v,d=1) => Number.isFinite(v) ? v.toFixed(d).replace('.',',') : '—
 const weekDates = week => { const a=new Date(START); a.setDate(a.getDate()+(week-1)*7); const b=new Date(a); b.setDate(b.getDate()+6); return [a,b] }
 const dateLong = d => d.toLocaleDateString('nl-NL',{day:'numeric',month:'long',year:'numeric'})
 const dateShort = d => d.toLocaleDateString('nl-NL',{day:'numeric',month:'short'})
+const dateKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+const hasDayData = d => d && Object.values(d).some(v=>v!=='' && v!=null)
+function weekAndDayForDate(date){
+  const target=new Date(date.getFullYear(),date.getMonth(),date.getDate())
+  const start=new Date(START.getFullYear(),START.getMonth(),START.getDate())
+  const diff=Math.floor((target-start)/86400000)
+  if(diff<0) return null
+  return {week:Math.floor(diff/7)+1,day:diff%7}
+}
 
 function summarize(w){
   return {
@@ -257,13 +266,13 @@ export default function App(){
       {tab==='dashboard' && <Dashboard latest={latest} prev={prev} phase={phase} summaries={populatedSummaries} setTab={setTab}/>} 
       {tab==='checkin' && <>
         <Hero type="checkin" title="Check-in" subtitle="Jouw dagelijkse gewoonten, jouw resultaat."/>
-        <WeekSelector selected={selectedWeek} setSelected={setSelectedWeek} max={Math.max(latestWeek+1,selectedWeek)} dates={[a,b]}/>
+        <WeekSelector selected={selectedWeek} setSelected={setSelectedWeek} dates={[a,b]}/>
         <div className="day-tabs">{DAY_NAMES.map((d,i)=><button key={d} className={activeDay===i?'active':''} onClick={()=>setActiveDay(i)}><b>{d}</b><small>{dateShort(new Date(a.getFullYear(),a.getMonth(),a.getDate()+i))}</small></button>)}</div>
         <DayForm day={activeDay} data={current.days[activeDay]} onChange={(k,v)=>updateDay(activeDay,k,v)} week={current} onWeek={updateWeek}/>
         <section className="card note-card"><label>Opmerking bij deze week<textarea value={current.note} onChange={e=>updateWeek('note',e.target.value)} placeholder="Bijzonderheden, vakantie, werkstress, training..."/></label><div className={`autosave-status ${autoSaveState==='error'?'error':''}`}><CheckCircle2 size={17}/><span>{autoSaveText}</span></div></section>
       </>}
       {tab==='progress' && <Progress summaries={summaries}/>} 
-      {tab==='history' && <HistoryPage weeks={weeks} summaries={summaries} openWeek={w=>{setSelectedWeek(w);setTab('checkin')}}/>}
+      {tab==='history' && <HistoryPage weeks={weeks} summaries={summaries} openDay={(w,d=0)=>{setSelectedWeek(w);setActiveDay(d);setTab('checkin')}}/>}
       {tab==='export' && <ExportPage exportExcel={exportExcel}/>} 
       {tab==='coach' && <CoachPage week={selectedWeek} current={current} onWeek={updateWeek} aiFeedback={aiFeedback} busy={busy}/>} 
       {tab==='more' && <SettingsPage cloudEnabled={cloudEnabled} user={user} email={email} setEmail={setEmail} password={password} setPassword={setPassword} confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword} authView={authView} setAuthView={setAuthView} auth={auth} resendConfirmation={resendConfirmation} syncCloud={syncCloud} syncState={syncState} lastSync={lastSync} busy={busy} msg={msg} week={selectedWeek} current={current} aiFeedback={aiFeedback} setTab={setTab}/>} 
@@ -310,14 +319,110 @@ function Dashboard({latest,prev,phase,summaries,setTab}){
 function Kpi({label,value,change}){return <div className="kpi"><span>{label}</span><strong>{value}</strong><small>{change}</small></div>}
 function Chart({data,suffix=''}){return <div className="chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{top:10,right:12,left:-18,bottom:0}}><CartesianGrid stroke="#eadfda" strokeDasharray="3 3"/><XAxis dataKey="week" tick={{fontSize:12,fill:'#7e706c'}}/><YAxis tick={{fontSize:12,fill:'#7e706c'}} domain={['dataMin - 1','dataMax + 1']}/><Tooltip formatter={v=>[`${String(v).replace('.',',')}${suffix}`,'']}/><Line type="monotone" dataKey="value" stroke="#bd6e7e" strokeWidth={3} dot={{r:4,fill:'#bd6e7e'}} activeDot={{r:6}}/></LineChart></ResponsiveContainer></div>}
 function BarViz({data}){return <div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={data} margin={{top:10,right:10,left:-18,bottom:0}}><CartesianGrid stroke="#eadfda" strokeDasharray="3 3"/><XAxis dataKey="week" tick={{fontSize:12,fill:'#7e706c'}}/><YAxis tick={{fontSize:12,fill:'#7e706c'}}/><Tooltip/><Bar dataKey="value" fill="#bd6e7e" radius={[7,7,0,0]}/></BarChart></ResponsiveContainer></div>}
-function WeekSelector({selected,setSelected,max,dates}){return <div className="week-select"><button onClick={()=>setSelected(Math.max(1,selected-1))}><ChevronLeft/></button><div><b>Week {selected}</b><small>{dateLong(dates[0])} — {dateLong(dates[1])}</small></div><button onClick={()=>setSelected(Math.min(max,selected+1))}><ChevronRight/></button></div>}
+function WeekSelector({selected,setSelected,dates}){
+  const phase=phaseForWeek(selected)
+  const today=new Date()
+  const todayInfo=weekAndDayForDate(today)
+  const currentWeek=Math.max(1,todayInfo?.week||1)
+  const maxWeek=Math.max(104,currentWeek+12,selected+12)
+  const weeks=Array.from({length:maxWeek},(_,i)=>i+1)
+  return <div className="week-picker-wrap">
+    <div className="week-select">
+      <button onClick={()=>setSelected(Math.max(1,selected-1))} aria-label="Vorige week"><ChevronLeft/></button>
+      <div><b>Week {selected} · {phase.name}</b><small>{dateLong(dates[0])} — {dateLong(dates[1])} · {phase.kcal}</small></div>
+      <button onClick={()=>setSelected(selected+1)} aria-label="Volgende week"><ChevronRight/></button>
+    </div>
+    <div className="week-jump">
+      <label>Ga direct naar week
+        <select value={selected} onChange={e=>setSelected(Number(e.target.value))}>
+          {weeks.map(w=>{const ph=phaseForWeek(w);return <option key={w} value={w}>Week {w} · {ph.name} · {ph.kcal}</option>})}
+        </select>
+      </label>
+      <button type="button" className="secondary current-week-button" onClick={()=>setSelected(currentWeek)}>Huidige week</button>
+    </div>
+  </div>
+}
 function DayForm({day,data,onChange,week,onWeek}){
   const fields=[['weight','Gewicht','kg','.1'],['calories','Calorieën (totaal)','kcal','1'],['strength','Kracht niveau (1-10)','','1'],['energy','Energie niveau (1-10)','','1'],['stress','Stress niveau (1-10)','','1'],['sleep','Slaap','uren','.1'],['steps','Stappen','','1']]
   return <section className="card day-form"><div className="day-form-head"><h2>{FULL_DAYS[day]}</h2><span>{day===6?'Zondagmeting':''}</span></div>{fields.map(([k,l,u,step])=><label className="field-row" key={k}><span>{l}</span><div className="input-wrap"><input type="number" step={step} min={['strength','energy','stress'].includes(k)?1:0} max={['strength','energy','stress'].includes(k)?10:undefined} value={data[k]} onChange={e=>onChange(k,e.target.value)} inputMode="decimal"/><small>{u}</small></div></label>)}{day===6&&<div className="sunday-box"><label className="field-row"><span>Omvang heup</span><div className="input-wrap"><input value={week.hip} onChange={e=>onWeek('hip',e.target.value)} inputMode="decimal"/><small>cm</small></div></label><label className="field-row"><span>Omvang navel</span><div className="input-wrap"><input value={week.navel} onChange={e=>onWeek('navel',e.target.value)} inputMode="decimal"/><small>cm</small></div></label></div>}</section>
 }
 function Progress({summaries}){return <><PageHero type="progress" title="Voortgang" subtitle="Week-op-week zie je precies wat er verandert."/><section className="card"><WeekTable summaries={summaries}/></section></>}
 function WeekTable({summaries}){return <div className="table-wrap"><table><thead><tr><th>Week</th><th>Gewicht</th><th>Δ</th><th>Kcal</th><th>Kracht</th><th>Energie</th><th>Stress</th><th>Slaap</th><th>Stappen</th><th>Heup</th><th>Navel</th></tr></thead><tbody>{[...summaries].reverse().map((s,i,arr)=>{const prev=arr[i+1];return <tr key={s.week}><td><b>W{s.week}</b></td><td>{fmt(s.weight)}</td><td>{prev?delta(s.weight,prev.weight,'kg'):'—'}</td><td>{Number.isFinite(s.calories)?Math.round(s.calories):'—'}</td><td>{fmt(s.strength)}</td><td>{fmt(s.energy)}</td><td>{fmt(s.stress)}</td><td>{fmt(s.sleep)}</td><td>{Number.isFinite(s.steps)?Math.round(s.steps).toLocaleString('nl-NL'):'—'}</td><td>{fmt(s.hip)}</td><td>{fmt(s.navel)}</td></tr>})}</tbody></table></div>}
-function HistoryPage({weeks,summaries,openWeek}){return <><PageHero type="history" title="Historie" subtitle="Je hele traject, week voor week terug te kijken."/><div className="history-list">{[...weeks].sort((a,b)=>b.week-a.week).map(w=>{const s=summaries.find(x=>x.week===w.week);const [a,b]=weekDates(w.week);return <button key={w.week} onClick={()=>openWeek(w.week)}><span><b>Week {w.week}</b><small>{dateShort(a)} — {dateShort(b)}</small></span><strong>{fmt(s?.weight)} kg</strong><ChevronRight/></button>})}</div></>}
+function HistoryPage({weeks,summaries,openDay}){
+  const latestWeekNo=Math.max(1,...weeks.map(w=>w.week||1))
+  const [latestStart]=weekDates(latestWeekNo)
+  const [view,setView]=useState('calendar')
+  const [monthCursor,setMonthCursor]=useState(()=>new Date(latestStart.getFullYear(),latestStart.getMonth(),1))
+  const year=monthCursor.getFullYear(), month=monthCursor.getMonth()
+  const monthName=monthCursor.toLocaleDateString('nl-NL',{month:'long',year:'numeric'})
+  const first=new Date(year,month,1)
+  const last=new Date(year,month+1,0)
+  const offset=(first.getDay()+6)%7
+  const cells=Array(offset).fill(null)
+  for(let d=1;d<=last.getDate();d++) cells.push(new Date(year,month,d))
+  while(cells.length%7) cells.push(null)
+
+  const dayRecords=[]
+  weeks.forEach(w=>{
+    const [ws]=weekDates(w.week)
+    w.days.forEach((day,i)=>{
+      const date=new Date(ws.getFullYear(),ws.getMonth(),ws.getDate()+i)
+      if(date.getFullYear()===year && date.getMonth()===month) dayRecords.push({date,day,week:w.week,dayIndex:i,hip:i===6?num(w.hip):null,navel:i===6?num(w.navel):null})
+    })
+  })
+  const values=key=>dayRecords.map(r=>num(r.day?.[key])).filter(Number.isFinite)
+  const weights=dayRecords.map(r=>({date:r.date,value:num(r.day?.weight)})).filter(r=>Number.isFinite(r.value)).sort((a,b)=>a.date-b.date)
+  const hips=dayRecords.filter(r=>Number.isFinite(r.hip)).sort((a,b)=>a.date-b.date)
+  const navels=dayRecords.filter(r=>Number.isFinite(r.navel)).sort((a,b)=>a.date-b.date)
+  const mAvg=key=>{const v=values(key);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null}
+  const mWeightDelta=weights.length>1?weights.at(-1).value-weights[0].value:null
+  const mHipDelta=hips.length>1?hips.at(-1).hip-hips[0].hip:null
+  const mNavelDelta=navels.length>1?navels.at(-1).navel-navels[0].navel:null
+
+  const recordForDate=date=>{
+    const wd=weekAndDayForDate(date)
+    if(!wd) return null
+    const w=weeks.find(x=>x.week===wd.week)
+    return {wd,w,day:w?.days?.[wd.day],hip:wd.day===6?num(w?.hip):null,navel:wd.day===6?num(w?.navel):null}
+  }
+  const moveMonth=n=>setMonthCursor(new Date(year,month+n,1))
+  return <>
+    <PageHero type="history" title="Historie" subtitle="Bekijk je traject per maand of week en open iedere dag opnieuw."/>
+    <div className="history-view-switch"><button className={view==='calendar'?'active':''} onClick={()=>setView('calendar')}>Kalender</button><button className={view==='weeks'?'active':''} onClick={()=>setView('weeks')}>Weken</button></div>
+    {view==='calendar' ? <>
+      <section className="card month-summary">
+        <div className="month-nav"><button onClick={()=>moveMonth(-1)} aria-label="Vorige maand"><ChevronLeft/></button><div><h2>{monthName.charAt(0).toUpperCase()+monthName.slice(1)}</h2><small>{dayRecords.filter(r=>hasDayData(r.day)).length} dagen met check-in</small></div><button onClick={()=>moveMonth(1)} aria-label="Volgende maand"><ChevronRight/></button></div>
+        <div className="month-kpis">
+          <div><span>Gem. gewicht</span><b>{fmt(mAvg('weight'))} kg</b><small>{Number.isFinite(mWeightDelta)?delta(weights.at(-1).value,weights[0].value,'kg'):'—'}</small></div>
+          <div><span>Gem. kcal</span><b>{Number.isFinite(mAvg('calories'))?Math.round(mAvg('calories')).toLocaleString('nl-NL'):'—'}</b><small>per dag</small></div>
+          <div><span>Gem. stappen</span><b>{Number.isFinite(mAvg('steps'))?Math.round(mAvg('steps')).toLocaleString('nl-NL'):'—'}</b><small>per dag</small></div>
+          <div><span>Heup Δ</span><b>{Number.isFinite(mHipDelta)?`${mHipDelta>0?'+':''}${fmt(mHipDelta)} cm`:'—'}</b><small>zondagmetingen</small></div>
+          <div><span>Navel Δ</span><b>{Number.isFinite(mNavelDelta)?`${mNavelDelta>0?'+':''}${fmt(mNavelDelta)} cm`:'—'}</b><small>zondagmetingen</small></div>
+        </div>
+      </section>
+      <section className="card calendar-card">
+        <div className="calendar-weekdays">{DAY_NAMES.map(d=><span key={d}>{d}</span>)}</div>
+        <div className="month-calendar">{cells.map((date,i)=>{
+          if(!date) return <div className="calendar-empty" key={`e${i}`}/>
+          const rec=recordForDate(date)
+          const beforeStart=!rec
+          const filled=hasDayData(rec?.day)
+          const sunday=rec?.wd?.day===6
+          const measured=Number.isFinite(rec?.hip)||Number.isFinite(rec?.navel)
+          const phase=rec?phaseForWeek(rec.wd.week):null
+          return <button key={dateKey(date)} disabled={beforeStart} className={`calendar-day ${filled?'filled':''} ${sunday?'sunday':''}`} onClick={()=>rec&&openDay(rec.wd.week,rec.wd.day)}>
+            <span className="calendar-date">{date.getDate()}</span>
+            {rec?.wd?.day===0 && <small className="calendar-weekno">W{rec.wd.week}</small>}
+            {filled && <span className="calendar-dot" title="Check-in ingevuld"/>}
+            {measured && <span className="measure-dot" title="Zondagmeting">cm</span>}
+            {phase && rec.wd.day===0 && <em>{phase.name}</em>}
+          </button>
+        })}</div>
+        <div className="calendar-legend"><span><i className="legend-dot filled"/> Check-in</span><span><i className="legend-dot measure"/> Zondagmeting</span></div>
+      </section>
+    </> : <div className="history-list">{[...weeks].sort((a,b)=>b.week-a.week).map(w=>{const s=summaries.find(x=>x.week===w.week);const [a,b]=weekDates(w.week);const ph=phaseForWeek(w.week);return <button key={w.week} onClick={()=>openDay(w.week,0)}><span><b>Week {w.week} · {ph.name}</b><small>{dateShort(a)} — {dateShort(b)} · {ph.kcal}</small></span><strong>{fmt(s?.weight)} kg</strong><ChevronRight/></button>})}</div>}
+  </>
+}
 function ExportPage({exportExcel}){return <><PageHero type="export" title="Export" subtitle="Neem je complete voortgang mee naar Excel."/><section className="card export-card"><Download size={34}/><div><h2>Excel-export</h2><p>Weekoverzicht, dagdata en coachfeedback in één bestand.</p></div><button className="primary" onClick={exportExcel}>Exporteren naar Excel</button></section></>}
 function CoachPage({week,current,onWeek,aiFeedback,busy}){return <><PageHero type="coach" title="Strong Vicky Coach" subtitle={`Eerlijke feedback op Week ${week}, zonder suikerlaag.`}/><section className="card coach-card"><div className="coach-icon"><Sparkles/></div><div><h2>Coachanalyse</h2><div className="coach-text">{current.coach||'Nog geen analyse voor deze week. Genereer feedback zodra de week voldoende gegevens bevat.'}</div><div className="actions"><button className="primary" onClick={aiFeedback} disabled={busy}>{busy?'Analyseren...':'Genereer coachfeedback'}</button><button className="secondary" onClick={()=>onWeek('coach','')}>Wis feedback</button></div></div></section></>}
 function SettingsPage({cloudEnabled,user,email,setEmail,password,setPassword,confirmPassword,setConfirmPassword,authView,setAuthView,auth,resendConfirmation,syncCloud,syncState,lastSync,busy,msg,week,current,aiFeedback,setTab}){

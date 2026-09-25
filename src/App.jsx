@@ -41,12 +41,9 @@ function delta(a,b,unit=''){
   return `${d>0?'+':''}${d.toFixed(1).replace('.',',')} ${unit}`.trim()
 }
 function phaseForWeek(week){
-  const [start]=weekDates(week)
-  const m=start.getMonth(), y=start.getFullYear()
-  if(y===2026 && m<11) return {name:'Opbouw', kcal:'1.450 kcal'}
-  if((y===2026&&m===11)||(y===2027&&m<=1)) return {name:'Bulk', kcal:'tot 1.750 kcal'}
-  if(y===2027&&m>=2&&m<=3) return {name:'Afbouw', kcal:'±1.450 kcal'}
-  return {name:'Traject', kcal:'persoonlijk doel'}
+  if(week <= 2) return {name:'Cut', kcal:'max 1.200 kcal', target:1200, period:'Week 1–2'}
+  if(week <= 8) return {name:'Opbouw', kcal:'1.450 kcal', target:1450, period:'Week 3–8'}
+  return {name:'Bulk', kcal:'1.750 kcal', target:1750, period:'Vanaf Week 9'}
 }
 function localCoach(curr, prev){
   if(!curr) return 'Nog onvoldoende gegevens voor feedback.'
@@ -223,7 +220,7 @@ export default function App(){
     setBusy(true)
     let feedback=''
     try{
-      const r=await fetch('/.netlify/functions/coach',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({current:curr,history,note:current.note})})
+      const r=await fetch('/.netlify/functions/coach',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({current:curr,history,note:current.note,phase:phaseForWeek(selectedWeek)})})
       if(!r.ok) throw new Error('AI Coach is nog niet actief.')
       const data=await r.json(); feedback=data.feedback
     }catch{ feedback=localCoach(curr,summaries[idx-1]) }
@@ -269,7 +266,7 @@ export default function App(){
       {tab==='history' && <HistoryPage weeks={weeks} summaries={summaries} openWeek={w=>{setSelectedWeek(w);setTab('checkin')}}/>}
       {tab==='export' && <ExportPage exportExcel={exportExcel}/>} 
       {tab==='coach' && <CoachPage week={selectedWeek} current={current} onWeek={updateWeek} aiFeedback={aiFeedback} busy={busy}/>} 
-      {tab==='more' && <SettingsPage cloudEnabled={cloudEnabled} user={user} email={email} setEmail={setEmail} password={password} setPassword={setPassword} confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword} authView={authView} setAuthView={setAuthView} auth={auth} resendConfirmation={resendConfirmation} syncCloud={syncCloud} syncState={syncState} lastSync={lastSync} busy={busy} msg={msg}/>} 
+      {tab==='more' && <SettingsPage cloudEnabled={cloudEnabled} user={user} email={email} setEmail={setEmail} password={password} setPassword={setPassword} confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword} authView={authView} setAuthView={setAuthView} auth={auth} resendConfirmation={resendConfirmation} syncCloud={syncCloud} syncState={syncState} lastSync={lastSync} busy={busy} msg={msg} week={selectedWeek} current={current} aiFeedback={aiFeedback} setTab={setTab}/>} 
     </main>
 
     <nav className="mobile-nav">{[['dashboard',Home,'Home'],['checkin',CalendarDays,'Check-in'],['progress',BarChart3,'Voortgang'],['history',History,'Historie'],['more',Settings,'Meer']].map(([id,Icon,label])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}><Icon size={21}/><span>{label}</span></button>)}</nav>
@@ -318,15 +315,20 @@ function DayForm({day,data,onChange,week,onWeek}){
   const fields=[['weight','Gewicht','kg','.1'],['calories','Calorieën (totaal)','kcal','1'],['strength','Kracht niveau (1-10)','','1'],['energy','Energie niveau (1-10)','','1'],['stress','Stress niveau (1-10)','','1'],['sleep','Slaap','uren','.1'],['steps','Stappen','','1']]
   return <section className="card day-form"><div className="day-form-head"><h2>{FULL_DAYS[day]}</h2><span>{day===6?'Zondagmeting':''}</span></div>{fields.map(([k,l,u,step])=><label className="field-row" key={k}><span>{l}</span><div className="input-wrap"><input type="number" step={step} min={['strength','energy','stress'].includes(k)?1:0} max={['strength','energy','stress'].includes(k)?10:undefined} value={data[k]} onChange={e=>onChange(k,e.target.value)} inputMode="decimal"/><small>{u}</small></div></label>)}{day===6&&<div className="sunday-box"><label className="field-row"><span>Omvang heup</span><div className="input-wrap"><input value={week.hip} onChange={e=>onWeek('hip',e.target.value)} inputMode="decimal"/><small>cm</small></div></label><label className="field-row"><span>Omvang navel</span><div className="input-wrap"><input value={week.navel} onChange={e=>onWeek('navel',e.target.value)} inputMode="decimal"/><small>cm</small></div></label></div>}</section>
 }
-function Progress({summaries}){return <><PageTitle title="Voortgang" sub="Week-op-week vergelijking over het hele traject."/><section className="card"><WeekTable summaries={summaries}/></section></>}
+function Progress({summaries}){return <><PageHero type="progress" title="Voortgang" subtitle="Week-op-week zie je precies wat er verandert."/><section className="card"><WeekTable summaries={summaries}/></section></>}
 function WeekTable({summaries}){return <div className="table-wrap"><table><thead><tr><th>Week</th><th>Gewicht</th><th>Δ</th><th>Kcal</th><th>Kracht</th><th>Energie</th><th>Stress</th><th>Slaap</th><th>Stappen</th><th>Heup</th><th>Navel</th></tr></thead><tbody>{[...summaries].reverse().map((s,i,arr)=>{const prev=arr[i+1];return <tr key={s.week}><td><b>W{s.week}</b></td><td>{fmt(s.weight)}</td><td>{prev?delta(s.weight,prev.weight,'kg'):'—'}</td><td>{Number.isFinite(s.calories)?Math.round(s.calories):'—'}</td><td>{fmt(s.strength)}</td><td>{fmt(s.energy)}</td><td>{fmt(s.stress)}</td><td>{fmt(s.sleep)}</td><td>{Number.isFinite(s.steps)?Math.round(s.steps).toLocaleString('nl-NL'):'—'}</td><td>{fmt(s.hip)}</td><td>{fmt(s.navel)}</td></tr>})}</tbody></table></div>}
-function HistoryPage({weeks,summaries,openWeek}){return <><PageTitle title="Historie" sub="Open een eerdere week om gegevens terug te zien of aan te passen."/><div className="history-list">{[...weeks].sort((a,b)=>b.week-a.week).map(w=>{const s=summaries.find(x=>x.week===w.week);const [a,b]=weekDates(w.week);return <button key={w.week} onClick={()=>openWeek(w.week)}><span><b>Week {w.week}</b><small>{dateShort(a)} — {dateShort(b)}</small></span><strong>{fmt(s?.weight)} kg</strong><ChevronRight/></button>})}</div></>}
-function ExportPage({exportExcel}){return <><PageTitle title="Export" sub="Exporteer je voortgang naar Excel."/><section className="card export-card"><Download size={34}/><div><h2>Excel-export</h2><p>Weekoverzicht, dagdata en coachfeedback in één bestand.</p></div><button className="primary" onClick={exportExcel}>Exporteren naar Excel</button></section></>}
-function CoachPage({week,current,onWeek,aiFeedback,busy}){return <><PageTitle title="Strong Vicky Coach" sub={`Eerlijke feedback op Week ${week}, zonder suikerlaag.`}/><section className="card coach-card"><div className="coach-icon"><Sparkles/></div><div><h2>Coachanalyse</h2><div className="coach-text">{current.coach||'Nog geen analyse voor deze week. Genereer feedback zodra de week voldoende gegevens bevat.'}</div><div className="actions"><button className="primary" onClick={aiFeedback} disabled={busy}>{busy?'Analyseren...':'Genereer coachfeedback'}</button><button className="secondary" onClick={()=>onWeek('coach','')}>Wis feedback</button></div></div></section></>}
-function SettingsPage({cloudEnabled,user,email,setEmail,password,setPassword,confirmPassword,setConfirmPassword,authView,setAuthView,auth,resendConfirmation,syncCloud,syncState,lastSync,busy,msg}){
+function HistoryPage({weeks,summaries,openWeek}){return <><PageHero type="history" title="Historie" subtitle="Je hele traject, week voor week terug te kijken."/><div className="history-list">{[...weeks].sort((a,b)=>b.week-a.week).map(w=>{const s=summaries.find(x=>x.week===w.week);const [a,b]=weekDates(w.week);return <button key={w.week} onClick={()=>openWeek(w.week)}><span><b>Week {w.week}</b><small>{dateShort(a)} — {dateShort(b)}</small></span><strong>{fmt(s?.weight)} kg</strong><ChevronRight/></button>})}</div></>}
+function ExportPage({exportExcel}){return <><PageHero type="export" title="Export" subtitle="Neem je complete voortgang mee naar Excel."/><section className="card export-card"><Download size={34}/><div><h2>Excel-export</h2><p>Weekoverzicht, dagdata en coachfeedback in één bestand.</p></div><button className="primary" onClick={exportExcel}>Exporteren naar Excel</button></section></>}
+function CoachPage({week,current,onWeek,aiFeedback,busy}){return <><PageHero type="coach" title="Strong Vicky Coach" subtitle={`Eerlijke feedback op Week ${week}, zonder suikerlaag.`}/><section className="card coach-card"><div className="coach-icon"><Sparkles/></div><div><h2>Coachanalyse</h2><div className="coach-text">{current.coach||'Nog geen analyse voor deze week. Genereer feedback zodra de week voldoende gegevens bevat.'}</div><div className="actions"><button className="primary" onClick={aiFeedback} disabled={busy}>{busy?'Analyseren...':'Genereer coachfeedback'}</button><button className="secondary" onClick={()=>onWeek('coach','')}>Wis feedback</button></div></div></section></>}
+function SettingsPage({cloudEnabled,user,email,setEmail,password,setPassword,confirmPassword,setConfirmPassword,authView,setAuthView,auth,resendConfirmation,syncCloud,syncState,lastSync,busy,msg,week,current,aiFeedback,setTab}){
   const syncLabel = syncState==='syncing'?'Bezig met synchroniseren':syncState==='error'?'Synchronisatieprobleem':user?'Synchronisatie actief':'Inloggen vereist'
   const syncTime = lastSync ? lastSync.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : null
-  return <><PageTitle title="Instellingen" sub="Account en synchronisatie tussen iPhone, iPad en Mac."/>
+  return <><PageHero type="settings" title="Instellingen" subtitle="Account, synchronisatie en jouw wekelijkse AI-coach."/>
+    <section className="card weekly-ai-card">
+      <div className="weekly-ai-copy"><span className="ai-eyebrow"><Sparkles size={17}/> AI WEEKFEEDBACK</span><h2>Laat Week {week} analyseren</h2><p>De coach vergelijkt gewicht, calorieën, kracht, energie, stress, slaap, stappen en je zondagmetingen met eerdere weken en de huidige fase. Eerlijk, direct en zonder suikerlaag.</p></div>
+      <button className="ai-week-button" onClick={aiFeedback} disabled={busy}><Sparkles size={20}/>{busy?'Week wordt geanalyseerd…':'START AI WEEKANALYSE'}</button>
+      {current?.coach ? <div className="ai-latest"><b>Laatste feedback voor Week {week}</b><p>{current.coach.length>320?`${current.coach.slice(0,320)}…`:current.coach}</p><button className="text-button" onClick={()=>setTab('coach')}>Bekijk volledige feedback →</button></div> : <small className="ai-empty">Nog geen AI-feedback opgeslagen voor deze week.</small>}
+    </section>
     <section className="card status-card"><h2>Verbindingsstatus</h2><Status label="Netlify app" ok/><Status label="Supabase cloud" ok={cloudEnabled}/><Status label="Account ingelogd" ok={Boolean(user)}/><Status label="Cloud synchronisatie" ok={Boolean(user)&&syncState!=='error'} text={syncTime?`${syncLabel} · ${syncTime}`:syncLabel}/><Status label="GPT Coach functie" ok/></section>
     <section className="card auth-card">
       {user ? <><div className="account-head"><div><h2>Account</h2><p>Ingelogd als <b>{user.email}</b>.</p></div><div className="cloud-badge"><Cloud size={17}/> Sync actief</div></div><p className="auth-help">Gebruik hetzelfde account op je iPhone, iPad en Mac. Je check-ins worden via Supabase gedeeld.</p><div className="actions"><button className="primary" disabled={busy||syncState==='syncing'} onClick={syncCloud}><Cloud size={18}/>{syncState==='syncing'?'Synchroniseren...':'Synchroniseer nu'}</button><button className="secondary" onClick={()=>supabase.auth.signOut()}><LogOut size={18}/> Uitloggen</button></div></> : <>
@@ -347,4 +349,5 @@ function SettingsPage({cloudEnabled,user,email,setEmail,password,setPassword,con
   </>
 }
 function Status({label,ok,text}){return <div className="status-row"><CheckCircle2 className={ok?'ok':''}/><span><b>{label}</b><small>{text||(ok?'Gereed':'Nog configureren')}</small></span></div>}
+function PageHero({type,title,subtitle}){return <section className={`sub-hero ${type}-subhero`}><div><h1>{title}</h1><p>{subtitle}</p></div></section>}
 function PageTitle({title,sub}){return <header className="page-title"><h1>{title}</h1><p>{sub}</p></header>}

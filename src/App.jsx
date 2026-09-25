@@ -15,7 +15,11 @@ const DAY_NAMES = ['Ma','Di','Wo','Do','Vr','Za','Zo']
 const FULL_DAYS = ['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag']
 const emptyDay = () => ({ weight:'', calories:'', strength:'', energy:'', stress:'', sleep:'', steps:'' })
 const emptyWeek = week => ({ week, days:Array.from({length:7}, emptyDay), hip:'', navel:'', note:'', coach:'' })
-const num = v => v === '' || v == null ? null : Number(v)
+const num = v => {
+  if(v === '' || v == null) return null
+  const n = typeof v === 'string' ? Number(v.trim().replace(',', '.')) : Number(v)
+  return Number.isFinite(n) ? n : null
+}
 const avg = arr => { const v = arr.map(num).filter(Number.isFinite); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null }
 const fmt = (v,d=1) => Number.isFinite(v) ? v.toFixed(d).replace('.',',') : '—'
 const weekDates = week => { const a=new Date(START); a.setDate(a.getDate()+(week-1)*7); const b=new Date(a); b.setDate(b.getDate()+6); return [a,b] }
@@ -81,8 +85,9 @@ export default function App(){
 
   const current = weeks.find(w=>w.week===selectedWeek) || emptyWeek(selectedWeek)
   const summaries = useMemo(()=>weeks.map(summarize).sort((a,b)=>a.week-b.week),[weeks])
-  const latest = summaries.at(-1)
-  const prev = summaries.length>1 ? summaries.at(-2) : null
+  const populatedSummaries = useMemo(()=>summaries.filter(s=>[s.weight,s.calories,s.strength,s.energy,s.stress,s.sleep,s.steps,s.hip,s.navel].some(Number.isFinite)),[summaries])
+  const latest = populatedSummaries.at(-1) || summaries.at(-1)
+  const prev = populatedSummaries.length>1 ? populatedSummaries.at(-2) : null
   const latestWeek = latest?.week || 1
   const phase = phaseForWeek(latestWeek)
 
@@ -252,7 +257,7 @@ export default function App(){
     </aside>
 
     <main>
-      {tab==='dashboard' && <Dashboard latest={latest} prev={prev} phase={phase} summaries={summaries} setTab={setTab}/>} 
+      {tab==='dashboard' && <Dashboard latest={latest} prev={prev} phase={phase} summaries={populatedSummaries} setTab={setTab}/>} 
       {tab==='checkin' && <>
         <Hero type="checkin" title="Check-in" subtitle="Jouw dagelijkse gewoonten, jouw resultaat."/>
         <WeekSelector selected={selectedWeek} setSelected={setSelectedWeek} max={Math.max(latestWeek+1,selectedWeek)} dates={[a,b]}/>
@@ -274,26 +279,34 @@ export default function App(){
 function Hero({type,title,subtitle,children}){return <section className={`hero ${type}-hero`}><div className="hero-copy"><h1>{title}</h1><p>{subtitle}</p>{children}</div></section>}
 function Dashboard({latest,prev,phase,summaries,setTab}){
   const week=latest?.week||1; const [a,b]=weekDates(week)
+  const firstWith = key => summaries.find(s=>Number.isFinite(s[key]))
   const weightData=summaries.filter(s=>Number.isFinite(s.weight)).map(s=>({week:`W${s.week}`,value:+s.weight.toFixed(2)}))
   const navelData=summaries.filter(s=>Number.isFinite(s.navel)).map(s=>({week:`W${s.week}`,value:s.navel}))
+  const hipData=summaries.filter(s=>Number.isFinite(s.hip)).map(s=>({week:`W${s.week}`,value:s.hip}))
   const kcalData=summaries.filter(s=>Number.isFinite(s.calories)).map(s=>({week:`W${s.week}`,value:Math.round(s.calories)}))
   return <>
     <Hero type="dashboard" title="Goedemorgen Vicky" subtitle="Kleine stappen, grote resultaten.">
       <button className="week-hero" onClick={()=>setTab('checkin')}><span><b>Week {week}</b><small>{dateShort(a)} t/m {dateShort(b)}</small></span><ChevronRight/></button>
     </Hero>
+    <div className="dashboard-section-title"><div><h2>Weekgemiddelden</h2><p>Alleen daadwerkelijk ingevulde dagen worden meegerekend.</p></div></div>
     <section className="kpis">
       <Kpi label="Gem. gewicht" value={`${fmt(latest?.weight)} kg`} change={delta(latest?.weight,prev?.weight,'kg')}/>
-      <Kpi label="Gem. calorieën" value={Number.isFinite(latest?.calories)?Math.round(latest.calories).toLocaleString('nl-NL'):'—'} change={delta(latest?.calories,prev?.calories,'kcal')}/>
+      <Kpi label="Gem. calorieën" value={Number.isFinite(latest?.calories)?`${Math.round(latest.calories).toLocaleString('nl-NL')} kcal`:'—'} change={delta(latest?.calories,prev?.calories,'kcal')}/>
+      <Kpi label="Gem. kracht" value={Number.isFinite(latest?.strength)?`${fmt(latest.strength)} / 10`:'—'} change={delta(latest?.strength,prev?.strength,'')}/>
+      <Kpi label="Gem. energie" value={Number.isFinite(latest?.energy)?`${fmt(latest.energy)} / 10`:'—'} change={delta(latest?.energy,prev?.energy,'')}/>
+      <Kpi label="Gem. stress" value={Number.isFinite(latest?.stress)?`${fmt(latest.stress)} / 10`:'—'} change={delta(latest?.stress,prev?.stress,'')}/>
+      <Kpi label="Gem. slaap" value={Number.isFinite(latest?.sleep)?`${fmt(latest.sleep)} uur`:'—'} change={delta(latest?.sleep,prev?.sleep,'uur')}/>
+      <Kpi label="Gem. stappen" value={Number.isFinite(latest?.steps)?Math.round(latest.steps).toLocaleString('nl-NL'):'—'} change={delta(latest?.steps,prev?.steps,'')}/>
+      <Kpi label="Navel (zondag)" value={Number.isFinite(latest?.navel)?`${fmt(latest.navel)} cm`:'—'} change={delta(latest?.navel,prev?.navel,'cm')}/>
+      <Kpi label="Heup (zondag)" value={Number.isFinite(latest?.hip)?`${fmt(latest.hip)} cm`:'—'} change={delta(latest?.hip,prev?.hip,'cm')}/>
       <Kpi label="Huidige fase" value={phase.name} change={phase.kcal}/>
-      <Kpi label="Navel (zondag)" value={`${fmt(latest?.navel)} cm`} change={delta(latest?.navel,prev?.navel,'cm')}/>
-      <Kpi label="Heup (zondag)" value={`${fmt(latest?.hip)} cm`} change={delta(latest?.hip,prev?.hip,'cm')}/>
-      <Kpi label="Stappen (gem.)" value={Number.isFinite(latest?.steps)?Math.round(latest.steps).toLocaleString('nl-NL'):'—'} change={delta(latest?.steps,prev?.steps,'')}/>
     </section>
-    <section className="card chart-card large"><div className="card-head"><h2>Gewicht</h2><strong>{Number.isFinite(latest?.weight)&&Number.isFinite(summaries[0]?.weight)?`${delta(latest.weight,summaries[0].weight,'kg')}`:'—'}</strong></div><Chart data={weightData} suffix=" kg"/></section>
+    <section className="card chart-card large"><div className="card-head"><h2>Gewicht</h2><strong>{Number.isFinite(latest?.weight)&&Number.isFinite(firstWith('weight')?.weight)?delta(latest.weight,firstWith('weight').weight,'kg'):'—'}</strong></div><Chart data={weightData} suffix=" kg"/></section>
     <div className="chart-pair">
-      <section className="card chart-card"><div className="card-head"><h2>Navelomvang</h2><strong>{delta(latest?.navel,summaries[0]?.navel,'cm')}</strong></div><Chart data={navelData} suffix=" cm"/></section>
-      <section className="card chart-card"><div className="card-head"><h2>Calorieën (gem.)</h2><strong>{delta(latest?.calories,summaries[0]?.calories,'kcal')}</strong></div><BarViz data={kcalData}/></section>
+      <section className="card chart-card"><div className="card-head"><h2>Navelomvang</h2><strong>{delta(latest?.navel,firstWith('navel')?.navel,'cm')}</strong></div><Chart data={navelData} suffix=" cm"/></section>
+      <section className="card chart-card"><div className="card-head"><h2>Heupomvang</h2><strong>{delta(latest?.hip,firstWith('hip')?.hip,'cm')}</strong></div><Chart data={hipData} suffix=" cm"/></section>
     </div>
+    <section className="card chart-card"><div className="card-head"><h2>Calorieën (gem.)</h2><strong>{delta(latest?.calories,firstWith('calories')?.calories,'kcal')}</strong></div><BarViz data={kcalData}/></section>
     <section className="quote-card"><span>“CONSISTENCY CREATES CHANGE”</span><em>Same Girl.<br/>Stronger Mindset.</em></section>
   </>
 }

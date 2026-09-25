@@ -253,7 +253,7 @@ export default function App(){
       : autoSaveAt
         ? `${user?'Opgeslagen & gesynchroniseerd':'Opgeslagen'} ✓ · ${autoSaveAt.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}`
         : 'Automatisch opslaan actief'
-  const nav=[['dashboard',Home,'Dashboard'],['checkin',CalendarDays,'Check-in'],['progress',BarChart3,'Voortgang'],['history',History,'Historie'],['export',Download,'Export'],['coach',MessageCircle,'Coach'],['more',Settings,'Instellingen']]
+  const nav=[['dashboard',Home,'Dashboard'],['checkin',CalendarDays,'Check-in'],['progress',BarChart3,'Voortgang'],['coach',MessageCircle,'Coach'],['history',History,'Historie'],['export',Download,'Export'],['more',Settings,'Instellingen']]
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -274,11 +274,11 @@ export default function App(){
       {tab==='progress' && <Progress summaries={summaries}/>} 
       {tab==='history' && <HistoryPage weeks={weeks} summaries={summaries} openDay={(w,d=0)=>{setSelectedWeek(w);setActiveDay(d);setTab('checkin')}}/>}
       {tab==='export' && <ExportPage exportExcel={exportExcel}/>} 
-      {tab==='coach' && <CoachPage week={selectedWeek} current={current} onWeek={updateWeek} aiFeedback={aiFeedback} busy={busy}/>} 
-      {tab==='more' && <SettingsPage cloudEnabled={cloudEnabled} user={user} email={email} setEmail={setEmail} password={password} setPassword={setPassword} confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword} authView={authView} setAuthView={setAuthView} auth={auth} resendConfirmation={resendConfirmation} syncCloud={syncCloud} syncState={syncState} lastSync={lastSync} busy={busy} msg={msg} week={selectedWeek} current={current} aiFeedback={aiFeedback} setTab={setTab}/>} 
+      {tab==='coach' && <CoachPage week={selectedWeek} setWeek={setSelectedWeek} current={current} weeks={weeks} onWeek={updateWeek} aiFeedback={aiFeedback} busy={busy}/>} 
+      {tab==='more' && <SettingsPage cloudEnabled={cloudEnabled} user={user} email={email} setEmail={setEmail} password={password} setPassword={setPassword} confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword} authView={authView} setAuthView={setAuthView} auth={auth} resendConfirmation={resendConfirmation} syncCloud={syncCloud} syncState={syncState} lastSync={lastSync} busy={busy} msg={msg}/>} 
     </main>
 
-    <nav className="mobile-nav">{[['dashboard',Home,'Home'],['checkin',CalendarDays,'Check-in'],['progress',BarChart3,'Voortgang'],['history',History,'Historie'],['more',Settings,'Meer']].map(([id,Icon,label])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}><Icon size={21}/><span>{label}</span></button>)}</nav>
+    <nav className="mobile-nav">{[['dashboard',Home,'Home'],['checkin',CalendarDays,'Check-in'],['progress',BarChart3,'Voortgang'],['coach',MessageCircle,'Coach'],['history',History,'Historie'],['more',Settings,'Meer']].map(([id,Icon,label])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}><Icon size={21}/><span>{label}</span></button>)}</nav>
   </div>
 }
 
@@ -424,16 +424,32 @@ function HistoryPage({weeks,summaries,openDay}){
   </>
 }
 function ExportPage({exportExcel}){return <><PageHero type="export" title="Export" subtitle="Neem je complete voortgang mee naar Excel."/><section className="card export-card"><Download size={34}/><div><h2>Excel-export</h2><p>Weekoverzicht, dagdata en coachfeedback in één bestand.</p></div><button className="primary" onClick={exportExcel}>Exporteren naar Excel</button></section></>}
-function CoachPage({week,current,onWeek,aiFeedback,busy}){return <><PageHero type="coach" title="Strong Vicky Coach" subtitle={`Eerlijke feedback op Week ${week}, zonder suikerlaag.`}/><section className="card coach-card"><div className="coach-icon"><Sparkles/></div><div><h2>Coachanalyse</h2><div className="coach-text">{current.coach||'Nog geen analyse voor deze week. Genereer feedback zodra de week voldoende gegevens bevat.'}</div><div className="actions"><button className="primary" onClick={aiFeedback} disabled={busy}>{busy?'Analyseren...':'Genereer coachfeedback'}</button><button className="secondary" onClick={()=>onWeek('coach','')}>Wis feedback</button></div></div></section></>}
-function SettingsPage({cloudEnabled,user,email,setEmail,password,setPassword,confirmPassword,setConfirmPassword,authView,setAuthView,auth,resendConfirmation,syncCloud,syncState,lastSync,busy,msg,week,current,aiFeedback,setTab}){
+function CoachPage({week,setWeek,current,weeks,onWeek,aiFeedback,busy}){
+  const [a,b]=weekDates(week)
+  const ph=phaseForWeek(week)
+  const previous=[...weeks].filter(w=>w.coach && w.week!==week).sort((a,b)=>b.week-a.week)
+  return <>
+    <PageHero type="coach" title="Strong Vicky Coach" subtitle="Alle AI-weekanalyses op één plek. Eerlijk, direct en gebaseerd op je data."/>
+    <WeekSelector selected={week} setSelected={setWeek} dates={[a,b]}/>
+    <section className="card coach-overview">
+      <div><span>Geselecteerde week</span><strong>Week {week}</strong></div>
+      <div><span>Fase</span><strong>{ph.name}</strong></div>
+      <div><span>Caloriedoel</span><strong>{ph.kcal}</strong></div>
+    </section>
+    <section className="card coach-action-card">
+      <span className="ai-eyebrow"><Sparkles size={17}/> AI WEEKFEEDBACK</span>
+      <h2>Analyseer Week {week}</h2>
+      <p>De coach vergelijkt je ingevulde data met eerdere weken en houdt rekening met de fase en het caloriedoel. Eén slechte dag leidt niet automatisch tot een aanpassing; terugkerende patronen worden wel benoemd.</p>
+      <button className="ai-week-button" onClick={aiFeedback} disabled={busy}><Sparkles size={20}/>{busy?'Week wordt geanalyseerd…':current.coach?'ANALYSE OPNIEUW UITVOEREN':'START AI WEEKANALYSE'}</button>
+    </section>
+    <section className="card coach-card"><div className="coach-icon"><Sparkles/></div><div><h2>Feedback Week {week}</h2><div className="coach-text">{current.coach||'Nog geen analyse voor deze week. Vul eerst je check-ins in en start daarna de weekanalyse.'}</div>{current.coach && <div className="actions"><button className="secondary" onClick={()=>onWeek('coach','')}>Wis feedback</button></div>}</div></section>
+    <section className="card coach-history"><h2>Vorige AI-feedback</h2>{previous.length ? <div className="coach-history-list">{previous.map(w=><button key={w.week} onClick={()=>setWeek(w.week)}><span><b>Week {w.week} · {phaseForWeek(w.week).name}</b><small>{w.coach.slice(0,110)}{w.coach.length>110?'…':''}</small></span><ChevronRight size={20}/></button>)}</div> : <p className="coach-empty">Er zijn nog geen eerdere weekanalyses opgeslagen.</p>}</section>
+  </>
+}
+function SettingsPage({cloudEnabled,user,email,setEmail,password,setPassword,confirmPassword,setConfirmPassword,authView,setAuthView,auth,resendConfirmation,syncCloud,syncState,lastSync,busy,msg}){
   const syncLabel = syncState==='syncing'?'Bezig met synchroniseren':syncState==='error'?'Synchronisatieprobleem':user?'Synchronisatie actief':'Inloggen vereist'
   const syncTime = lastSync ? lastSync.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : null
-  return <><PageHero type="settings" title="Instellingen" subtitle="Account, synchronisatie en jouw wekelijkse AI-coach."/>
-    <section className="card weekly-ai-card">
-      <div className="weekly-ai-copy"><span className="ai-eyebrow"><Sparkles size={17}/> AI WEEKFEEDBACK</span><h2>Laat Week {week} analyseren</h2><p>De coach vergelijkt gewicht, calorieën, kracht, energie, stress, slaap, stappen en je zondagmetingen met eerdere weken en de huidige fase. Eerlijk, direct en zonder suikerlaag.</p></div>
-      <button className="ai-week-button" onClick={aiFeedback} disabled={busy}><Sparkles size={20}/>{busy?'Week wordt geanalyseerd…':'START AI WEEKANALYSE'}</button>
-      {current?.coach ? <div className="ai-latest"><b>Laatste feedback voor Week {week}</b><p>{current.coach.length>320?`${current.coach.slice(0,320)}…`:current.coach}</p><button className="text-button" onClick={()=>setTab('coach')}>Bekijk volledige feedback →</button></div> : <small className="ai-empty">Nog geen AI-feedback opgeslagen voor deze week.</small>}
-    </section>
+  return <><PageHero type="settings" title="Instellingen" subtitle="Account, cloud en synchronisatie."/>
     <section className="card status-card"><h2>Verbindingsstatus</h2><Status label="Netlify app" ok/><Status label="Supabase cloud" ok={cloudEnabled}/><Status label="Account ingelogd" ok={Boolean(user)}/><Status label="Cloud synchronisatie" ok={Boolean(user)&&syncState!=='error'} text={syncTime?`${syncLabel} · ${syncTime}`:syncLabel}/><Status label="GPT Coach functie" ok/></section>
     <section className="card auth-card">
       {user ? <><div className="account-head"><div><h2>Account</h2><p>Ingelogd als <b>{user.email}</b>.</p></div><div className="cloud-badge"><Cloud size={17}/> Sync actief</div></div><p className="auth-help">Gebruik hetzelfde account op je iPhone, iPad en Mac. Je check-ins worden via Supabase gedeeld.</p><div className="actions"><button className="primary" disabled={busy||syncState==='syncing'} onClick={syncCloud}><Cloud size={18}/>{syncState==='syncing'?'Synchroniseren...':'Synchroniseer nu'}</button><button className="secondary" onClick={()=>supabase.auth.signOut()}><LogOut size={18}/> Uitloggen</button></div></> : <>

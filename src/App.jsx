@@ -307,12 +307,12 @@ function Dashboard({latest,prev,phase,summaries,setTab}){
       <Kpi label="Heup (zondag)" value={Number.isFinite(latest?.hip)?`${fmt(latest.hip)} cm`:'—'} change={delta(latest?.hip,prev?.hip,'cm')}/>
       <Kpi label="Huidige fase" value={phase.name} change={phase.kcal}/>
     </section>
-    <section className="card chart-card large"><div className="card-head"><h2>Gewicht</h2><strong>{Number.isFinite(latest?.weight)&&Number.isFinite(firstWith('weight')?.weight)?delta(latest.weight,firstWith('weight').weight,'kg'):'—'}</strong></div><Chart data={weightData} suffix=" kg"/></section>
+    <section className="card chart-card large"><div className="card-head"><h2>Gewicht</h2><strong>{Number.isFinite(latest?.weight) ? `${fmt(latest.weight)} kg` : '—'}</strong></div><Chart data={weightData} suffix=" kg"/></section>
     <div className="chart-pair">
-      <section className="card chart-card"><div className="card-head"><h2>Navelomvang</h2><strong>{delta(latest?.navel,firstWith('navel')?.navel,'cm')}</strong></div><Chart data={navelData} suffix=" cm"/></section>
-      <section className="card chart-card"><div className="card-head"><h2>Heupomvang</h2><strong>{delta(latest?.hip,firstWith('hip')?.hip,'cm')}</strong></div><Chart data={hipData} suffix=" cm"/></section>
+      <section className="card chart-card"><div className="card-head"><h2>Navelomvang</h2><strong>{Number.isFinite(latest?.navel) ? `${fmt(latest.navel)} cm` : '—'}</strong></div><Chart data={navelData} suffix=" cm"/></section>
+      <section className="card chart-card"><div className="card-head"><h2>Heupomvang</h2><strong>{Number.isFinite(latest?.hip) ? `${fmt(latest.hip)} cm` : '—'}</strong></div><Chart data={hipData} suffix=" cm"/></section>
     </div>
-    <section className="card chart-card"><div className="card-head"><h2>Calorieën (gem.)</h2><strong>{delta(latest?.calories,firstWith('calories')?.calories,'kcal')}</strong></div><BarViz data={kcalData}/></section>
+    <section className="card chart-card"><div className="card-head"><h2>Calorieën (gem.)</h2><strong>{Number.isFinite(latest?.calories) ? `${Math.round(latest.calories).toLocaleString('nl-NL')} kcal` : '—'}</strong></div><BarViz data={kcalData}/></section>
     <section className="quote-card"><span>“CONSISTENCY CREATES CHANGE”</span><em>Same Girl.<br/>Stronger Mindset.</em></section>
   </>
 }

@@ -57,21 +57,50 @@ function phaseForWeek(week){
   if(week <= 8) return {name:'Opbouw', kcal:'1.450 kcal', target:1450, period:'Week 3–8'}
   return {name:'Bulk', kcal:'1.750 kcal', target:1750, period:'Vanaf Week 9'}
 }
-function localCoach(curr, prev){
+function localCoach(curr, prev, weekData, history=[]){
   if(!curr) return 'Nog onvoldoende gegevens voor feedback.'
+  const note=(weekData?.note||'').trim()
   const lines=[]
+  const prior=history.filter(x=>x.week<curr.week)
+  const recent=prior.slice(-3)
+  const missedTrainingWeeks=recent.filter(x=>Number.isFinite(x.trainings)&&x.trainings<3).length
+  const lowStepWeeks=recent.filter(x=>Number.isFinite(x.steps)&&x.steps<10000).length
+
+  lines.push(`BEOORDELING\n${curr.trainings>=3?'Je trainingsdoel is gehaald.':'Je trainingsdoel is niet gehaald.'}${Number.isFinite(curr.steps)?` Je kwam gemiddeld op ${Math.round(curr.steps).toLocaleString('nl-NL')} stappen per dag.`:''}`)
+
+  if(note){
+    lines.push(`JOUW EIGEN FEEDBACK\nJe gaf zelf aan: “${note}”\nDit neem ik mee als verklaring voor de cijfers, maar een verklaring is niet automatisch een reden om het doel los te laten.`)
+  }else{
+    lines.push('JOUW EIGEN FEEDBACK\nJe hebt geen toelichting bij deze week ingevuld. Daardoor kan ik de oorzaak achter afwijkingen minder goed beoordelen.')
+  }
+
+  const analysis=[]
   if(prev && Number.isFinite(curr.weight)&&Number.isFinite(prev.weight)){
     const d=curr.weight-prev.weight
-    lines.push(`Je gemiddelde gewicht veranderde ${d<0?`${Math.abs(d).toFixed(1)} kg omlaag`:d>0?`${d.toFixed(1)} kg omhoog`:'nauwelijks'} ten opzichte van vorige week.`)
+    analysis.push(`Je gemiddelde gewicht ging ${Math.abs(d).toFixed(1).replace('.',',')} kg ${d<0?'omlaag':d>0?'omhoog':'nauwelijks van zijn plaats'}.`)
   }
-  if(Number.isFinite(curr.calories)) lines.push(`Gemiddelde calorie-inname: ${Math.round(curr.calories)} kcal per dag.`)
-  if(Number.isFinite(curr.steps)&&curr.steps<10000) lines.push(`Je zat gemiddeld op ${Math.round(curr.steps).toLocaleString('nl-NL')} stappen per dag. Dat is onder je doel van 10.000; hier verwacht ik komende week meer consistentie.`)
-  if(Number.isFinite(curr.trainings)&&curr.trainings<3) lines.push(`Je deed ${curr.trainings} krachttraining${curr.trainings===1?'':'en'} deze week. Het doel is 3; minder dan 3 is onvoldoende uitvoering van het plan.`)
-  if(Number.isFinite(curr.sleep)&&curr.sleep<6.5) lines.push('Je slaap ligt laag. Dat is een concreet herstelpunt en geen detail om te negeren.')
-  if(Number.isFinite(curr.stress)&&curr.stress>=7) lines.push('Je stressniveau is hoog. Als dit patroon aanhoudt, verdient herstel prioriteit.')
-  if(Number.isFinite(curr.strength)&&Number.isFinite(prev?.strength)&&curr.strength>prev.strength+.5) lines.push('Je krachtniveau stijgt duidelijk. Dat is een concreet positief signaal.')
-  if(!lines.length) lines.push('De data laat geen duidelijke afwijking zien. Er is geen reden om iets te forceren of mooier te maken dan het is.')
-  lines.push('Advies: pas het plan niet aan op basis van één losse week. Kijk eerst of het patroon zich herhaalt en of de uitvoering consistent was.')
+  if(Number.isFinite(curr.calories)) analysis.push(`Je gemiddelde inname was ${Math.round(curr.calories)} kcal.`)
+  if(Number.isFinite(curr.sleep)&&curr.sleep<6.5) analysis.push('Je slaap is laag genoeg om herstel, energie en trainingsuitvoering negatief te kunnen beïnvloeden.')
+  if(Number.isFinite(curr.stress)&&curr.stress>=7) analysis.push('Je stress is hoog; ik wil daarom onderscheid maken tussen een herstelprobleem en een plannings-/disciplineprobleem.')
+  if(curr.trainings<3){
+    analysis.push(missedTrainingWeeks>=2
+      ? `Dit is geen los incident meer: in ${missedTrainingWeeks} van de laatste ${recent.length} eerdere weken zat je ook onder 3 trainingen. De aanpak moet dus veranderen, niet alleen de intentie.`
+      : `Met ${curr.trainings}/3 trainingen ontbreekt uitvoering. Kijk vooral naar waarom de gemiste training niet op een ander moment is ingehaald.`)
+  }
+  if(Number.isFinite(curr.steps)&&curr.steps<10000){
+    const gap=Math.max(0,10000-curr.steps)
+    analysis.push(`${Math.round(gap).toLocaleString('nl-NL')} extra stappen per dag hadden je gemiddeld op 10.000 gebracht.${lowStepWeeks>=2?' Omdat dit ook in eerdere weken terugkomt, is “meer lopen” te vrijblijvend en is een vaste wandelroutine nodig.':''}`)
+  }
+  if(!analysis.length) analysis.push('De belangrijkste doelen zijn deze week voldoende uitgevoerd. Ik zie geen reden om het plan op basis van één week onnodig te veranderen.')
+  lines.push(`COACHANALYSE\n${analysis.join(' ')}`)
+
+  const actions=[]
+  if(curr.trainings<3) actions.push('Plan 3 krachttrainingen vooraf, waarvan minimaal 2 vroeg in de week. Houd de derde als flexmoment zodat één drukke dag niet automatisch 2/3 betekent.')
+  if(Number.isFinite(curr.steps)&&curr.steps<10000) actions.push('Maak 10.000 stappen geen eind-van-de-dag-probleem: bouw op werkdagen een vast wandelmoment in en controleer halverwege de dag of je op schema ligt.')
+  if(Number.isFinite(curr.sleep)&&curr.sleep<6.5) actions.push('Bescherm je slaap deze week actief; zonder beter herstel verwacht ik niet dat alleen “meer discipline” het probleem oplost.')
+  if(!actions.length) actions.push('Behoud de huidige structuur. Verander pas iets wanneer meerdere weken dezelfde afwijking laten zien.')
+  lines.push(`OPDRACHT VOOR VOLGENDE WEEK\n${actions.map((x,i)=>`${i+1}. ${x}`).join('\n')}`)
+  lines.push('PRIORITEIT\nUitvoering boven perfectie: de komende week wil ik vooral zien dat de afgesproken acties daadwerkelijk terugkomen in je dagdata.')
   return lines.join('\n\n')
 }
 
@@ -287,14 +316,36 @@ export default function App(){
     const idx=summaries.findIndex(s=>s.week===selectedWeek)
     const curr=summaries[idx]
     if(!curr){setMsg('Vul eerst gegevens in.');return}
-    const history=summaries.slice(Math.max(0,idx-7),idx+1)
+    const weekData=weeks.find(w=>w.week===selectedWeek) || current
+    const filledDays=weekData.days.filter(hasDayData).length
+    const missingOwnFeedback=!String(weekData.note||'').trim()
+    if((filledDays<7 || missingOwnFeedback) && !window.confirm(`Je week lijkt nog niet compleet (${filledDays}/7 dagen ingevuld${missingOwnFeedback?' en nog geen eigen weekfeedback':''}). Toch nu coachfeedback genereren?`)) return
+
+    const history=summaries.slice(Math.max(0,idx-11),idx+1)
+    const detailedHistory=weeks
+      .filter(w=>w.week<=selectedWeek && w.week>=selectedWeek-11)
+      .sort((a,b)=>a.week-b.week)
+      .map(w=>({
+        ...summarize(w),
+        days:w.days.map((d,i)=>({day:FULL_DAYS[i],...d})),
+        ownFeedback:w.note||'',
+        previousCoachFeedback:w.coach||''
+      }))
     setBusy(true)
     let feedback=''
     try{
-      const r=await fetch('/.netlify/functions/coach',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({current:curr,history,note:current.note,phase:phaseForWeek(selectedWeek)})})
+      const r=await fetch('/.netlify/functions/coach',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
+        current:curr,
+        currentWeek:{...weekData,days:weekData.days.map((d,i)=>({day:FULL_DAYS[i],...d}))},
+        history,
+        detailedHistory,
+        note:weekData.note,
+        phase:phaseForWeek(selectedWeek),
+        coachingInstruction:'Geef echte coachfeedback, niet alleen een samenvatting. Gebruik mijn eigen weekfeedback om oorzaken te begrijpen, maar accepteer verklaringen niet automatisch als excuus. Leg verbanden tussen training, stappen, calorieën, gewicht, slaap, energie en stress en vergelijk met eerdere weken. Benoem terugkerende patronen expliciet. Wees kritisch waar nodig. Eindig met maximaal 3 concrete, meetbare acties en één duidelijke prioriteit voor volgende week.'
+      })})
       if(!r.ok) throw new Error('AI Coach is nog niet actief.')
       const data=await r.json(); feedback=data.feedback
-    }catch{ feedback=localCoach(curr,summaries[idx-1]) }
+    }catch{ feedback=localCoach(curr,summaries[idx-1],weekData,history) }
     updateWeek('coach',feedback)
     setBusy(false)
   }
@@ -509,7 +560,7 @@ function CoachPage({week,setWeek,current,weeks,onWeek,aiFeedback,busy}){
     <section className="card coach-action-card">
       <span className="ai-eyebrow"><Sparkles size={17}/> AI WEEKFEEDBACK</span>
       <h2>Analyseer Week {week}</h2>
-      <p>De coach vergelijkt je ingevulde data met eerdere weken en houdt rekening met de fase en het caloriedoel. Eén slechte dag leidt niet automatisch tot een aanpassing; terugkerende patronen worden wel benoemd.</p>
+      <p>Start de analyse pas nadat jij je weekdata én eigen weekfeedback hebt ingevuld. De coach zoekt oorzaken en patronen in je dagelijkse data, vergelijkt eerdere weken en geeft kritische, concrete sturing voor de volgende week.</p>
       <button className="ai-week-button" onClick={aiFeedback} disabled={busy}><Sparkles size={20}/>{busy?'Week wordt geanalyseerd…':current.coach?'ANALYSE OPNIEUW UITVOEREN':'START AI WEEKANALYSE'}</button>
     </section>
     <section className="card coach-card"><div className="coach-icon"><Sparkles/></div><div><h2>Feedback Week {week}</h2><div className="coach-text">{current.coach||'Nog geen analyse voor deze week. Vul eerst je check-ins in en start daarna de weekanalyse.'}</div>{current.coach && <div className="actions"><button className="secondary" onClick={()=>onWeek('coach','')}>Wis feedback</button></div>}</div></section>

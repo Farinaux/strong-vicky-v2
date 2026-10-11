@@ -105,6 +105,7 @@ export default function App(){
   const runningWeekNo = todayInfo?.week || latestWeek
   const runningWeek = weeks.find(w=>w.week===runningWeekNo) || emptyWeek(runningWeekNo)
   const runningTrainings = runningWeek.days.filter(d=>d?.trained===true || d?.trained==='true').length
+  const runningSteps = avg(runningWeek.days.map(d=>d?.steps))
 
   useEffect(()=>localStorage.setItem('sv2_layout_weeks',JSON.stringify(weeks)),[weeks])
   useEffect(()=>{
@@ -324,7 +325,7 @@ export default function App(){
     </aside>
 
     <main>
-      {tab==='dashboard' && <Dashboard latest={latest} prev={prev} phase={phase} summaries={populatedSummaries} setTab={setTab} runningWeekNo={runningWeekNo} runningTrainings={runningTrainings}/>} 
+      {tab==='dashboard' && <Dashboard latest={latest} prev={prev} phase={phase} summaries={populatedSummaries} setTab={setTab} runningWeekNo={runningWeekNo} runningTrainings={runningTrainings} runningSteps={runningSteps}/>} 
       {tab==='checkin' && <>
         <Hero type="checkin" title="Check-in" subtitle="Jouw dagelijkse gewoonten, jouw resultaat."/>
         <WeekSelector selected={selectedWeek} setSelected={setSelectedWeek} dates={[a,b]}/>
@@ -344,7 +345,7 @@ export default function App(){
 }
 
 function Hero({type,title,subtitle,children}){return <section className={`hero ${type}-hero`}><div className="hero-copy"><h1>{title}</h1><p>{subtitle}</p>{children}</div></section>}
-function Dashboard({latest,prev,phase,summaries,setTab,runningWeekNo,runningTrainings}){
+function Dashboard({latest,prev,phase,summaries,setTab,runningWeekNo,runningTrainings,runningSteps}){
   const week=latest?.week||1; const [a,b]=weekDates(week)
   const firstWith = key => summaries.find(s=>Number.isFinite(s[key]))
   const weightData=summaries.filter(s=>Number.isFinite(s.weight)).map(s=>({week:`W${s.week}`,value:+s.weight.toFixed(2)}))
@@ -363,7 +364,7 @@ function Dashboard({latest,prev,phase,summaries,setTab,runningWeekNo,runningTrai
       <Kpi label="Gem. energie" value={Number.isFinite(latest?.energy)?`${fmt(latest.energy)} / 10`:'—'} change={delta(latest?.energy,prev?.energy,'')}/>
       <Kpi label="Gem. stress" value={Number.isFinite(latest?.stress)?`${fmt(latest.stress)} / 10`:'—'} change={delta(latest?.stress,prev?.stress,'')}/>
       <Kpi label="Gem. slaap" value={Number.isFinite(latest?.sleep)?`${fmt(latest.sleep)} uur`:'—'} change={delta(latest?.sleep,prev?.sleep,'uur')}/>
-      <Kpi label="Gem. stappen" value={Number.isFinite(latest?.steps)?Math.round(latest.steps).toLocaleString('nl-NL'):'—'} change={delta(latest?.steps,prev?.steps,'')}/>
+      <Kpi label="Gem. stappen deze week" value={Number.isFinite(runningSteps)?Math.round(runningSteps).toLocaleString('nl-NL'):'—'} change={`Week ${runningWeekNo} · doel 10.000 per dag`} status={Number.isFinite(runningSteps)?(runningSteps>=10000?'success':'danger'):undefined}/>
       <Kpi label="Krachttraining deze week" value={`${runningTrainings} / 3${runningTrainings>=3?' ✓':''}`} change={`Week ${runningWeekNo} · doel 3 trainingen`} status={runningTrainings>=3?'success':'danger'}/>
       <Kpi label="Navel (zondag)" value={Number.isFinite(latest?.navel)?`${fmt(latest.navel)} cm`:'—'} change={delta(latest?.navel,prev?.navel,'cm')}/>
       <Kpi label="Heup (zondag)" value={Number.isFinite(latest?.hip)?`${fmt(latest.hip)} cm`:'—'} change={delta(latest?.hip,prev?.hip,'cm')}/>

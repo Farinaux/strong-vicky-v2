@@ -13,7 +13,7 @@ import { cloudEnabled, supabase } from './supabase.js'
 const START = new Date('2026-09-21T00:00:00')
 const DAY_NAMES = ['Ma','Di','Wo','Do','Vr','Za','Zo']
 const FULL_DAYS = ['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag']
-const emptyDay = () => ({ weight:'', calories:'', strength:'', energy:'', stress:'', sleep:'', steps:'' })
+const emptyDay = () => ({ weight:'', calories:'', strength:'', energy:'', stress:'', sleep:'', steps:'', trained:false })
 const emptyWeek = week => ({ week, days:Array.from({length:7}, emptyDay), hip:'', navel:'', note:'', coach:'' })
 const num = v => {
   if(v === '' || v == null) return null
@@ -44,7 +44,7 @@ function summarize(w){
     weight:avg(w.days.map(x=>x.weight)), calories:avg(w.days.map(x=>x.calories)),
     strength:avg(w.days.map(x=>x.strength)), energy:avg(w.days.map(x=>x.energy)),
     stress:avg(w.days.map(x=>x.stress)), sleep:avg(w.days.map(x=>x.sleep)),
-    steps:avg(w.days.map(x=>x.steps)), hip:num(w.hip), navel:num(w.navel)
+    steps:avg(w.days.map(x=>x.steps)), trainings:w.days.filter(x=>x?.trained===true || x?.trained==='true').length, hip:num(w.hip), navel:num(w.navel)
   }
 }
 function delta(a,b,unit=''){
@@ -65,6 +65,8 @@ function localCoach(curr, prev){
     lines.push(`Je gemiddelde gewicht veranderde ${d<0?`${Math.abs(d).toFixed(1)} kg omlaag`:d>0?`${d.toFixed(1)} kg omhoog`:'nauwelijks'} ten opzichte van vorige week.`)
   }
   if(Number.isFinite(curr.calories)) lines.push(`Gemiddelde calorie-inname: ${Math.round(curr.calories)} kcal per dag.`)
+  if(Number.isFinite(curr.steps)&&curr.steps<10000) lines.push(`Je zat gemiddeld op ${Math.round(curr.steps).toLocaleString('nl-NL')} stappen per dag. Dat is onder je doel van 10.000; hier verwacht ik komende week meer consistentie.`)
+  if(Number.isFinite(curr.trainings)&&curr.trainings<3) lines.push(`Je deed ${curr.trainings} krachttraining${curr.trainings===1?'':'en'} deze week. Het doel is 3; minder dan 3 is onvoldoende uitvoering van het plan.`)
   if(Number.isFinite(curr.sleep)&&curr.sleep<6.5) lines.push('Je slaap ligt laag. Dat is een concreet herstelpunt en geen detail om te negeren.')
   if(Number.isFinite(curr.stress)&&curr.stress>=7) lines.push('Je stressniveau is hoog. Als dit patroon aanhoudt, verdient herstel prioriteit.')
   if(Number.isFinite(curr.strength)&&Number.isFinite(prev?.strength)&&curr.strength>prev.strength+.5) lines.push('Je krachtniveau stijgt duidelijk. Dat is een concreet positief signaal.')
@@ -281,7 +283,7 @@ export default function App(){
   }
   function exportExcel(){
     const wb=XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(summaries.map(s=>({Week:s.week,Gewicht:s.weight,Calorieen:s.calories,Kracht:s.strength,Energie:s.energy,Stress:s.stress,Slaap:s.sleep,Stappen:s.steps,Heup:s.hip,Navel:s.navel}))),'Weekoverzicht')
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(summaries.map(s=>({Week:s.week,Gewicht:s.weight,Calorieen:s.calories,Kracht:s.strength,Energie:s.energy,Stress:s.stress,Slaap:s.sleep,Stappen:s.steps,Krachttrainingen:s.trainings,Heup:s.hip,Navel:s.navel}))),'Weekoverzicht')
     const rows=[]; weeks.forEach(w=>w.days.forEach((d,i)=>rows.push({Week:w.week,Dag:FULL_DAYS[i],...d,Heup:i===6?w.hip:'',Navel:i===6?w.navel:''})))
     XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Dagdata')
     XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(weeks.map(w=>({Week:w.week,Coachfeedback:w.coach||''}))),'Coachfeedback')
@@ -387,10 +389,10 @@ function WeekSelector({selected,setSelected,dates}){
 }
 function DayForm({day,data,onChange,week,onWeek}){
   const fields=[['weight','Gewicht','kg','.1'],['calories','Calorieën (totaal)','kcal','1'],['strength','Kracht niveau (1-10)','','1'],['energy','Energie niveau (1-10)','','1'],['stress','Stress niveau (1-10)','','1'],['sleep','Slaap','uren','.1'],['steps','Stappen','','1']]
-  return <section className="card day-form"><div className="day-form-head"><h2>{FULL_DAYS[day]}</h2><span>{day===6?'Zondagmeting':''}</span></div>{fields.map(([k,l,u,step])=><label className="field-row" key={k}><span>{l}</span><div className="input-wrap"><input type="number" step={step} min={['strength','energy','stress'].includes(k)?1:0} max={['strength','energy','stress'].includes(k)?10:undefined} value={data[k]} onChange={e=>onChange(k,e.target.value)} inputMode="decimal"/><small>{u}</small></div></label>)}{day===6&&<div className="sunday-box"><label className="field-row"><span>Omvang heup</span><div className="input-wrap"><input value={week.hip} onChange={e=>onWeek('hip',e.target.value)} inputMode="decimal"/><small>cm</small></div></label><label className="field-row"><span>Omvang navel</span><div className="input-wrap"><input value={week.navel} onChange={e=>onWeek('navel',e.target.value)} inputMode="decimal"/><small>cm</small></div></label></div>}</section>
+  return <section className="card day-form"><div className="day-form-head"><h2>{FULL_DAYS[day]}</h2><span>{day===6?'Zondagmeting':''}</span></div><label className="field-row"><span>Krachttraining gedaan</span><div className="input-wrap"><input type="checkbox" checked={data.trained===true || data.trained==='true'} onChange={e=>onChange('trained',e.target.checked)}/></div></label>{fields.map(([k,l,u,step])=><label className="field-row" key={k}><span>{l}</span><div className="input-wrap"><input type="number" step={step} min={['strength','energy','stress'].includes(k)?1:0} max={['strength','energy','stress'].includes(k)?10:undefined} value={data[k]} onChange={e=>onChange(k,e.target.value)} inputMode="decimal"/><small>{u}</small></div></label>)}{day===6&&<div className="sunday-box"><label className="field-row"><span>Omvang heup</span><div className="input-wrap"><input value={week.hip} onChange={e=>onWeek('hip',e.target.value)} inputMode="decimal"/><small>cm</small></div></label><label className="field-row"><span>Omvang navel</span><div className="input-wrap"><input value={week.navel} onChange={e=>onWeek('navel',e.target.value)} inputMode="decimal"/><small>cm</small></div></label></div>}</section>
 }
 function Progress({summaries}){return <><PageHero type="progress" title="Voortgang" subtitle="Week-op-week zie je precies wat er verandert."/><section className="card"><WeekTable summaries={summaries}/></section></>}
-function WeekTable({summaries}){return <div className="table-wrap"><table><thead><tr><th>Week</th><th>Gewicht</th><th>Δ</th><th>Kcal</th><th>Kracht</th><th>Energie</th><th>Stress</th><th>Slaap</th><th>Stappen</th><th>Heup</th><th>Navel</th></tr></thead><tbody>{[...summaries].reverse().map((s,i,arr)=>{const prev=arr[i+1];return <tr key={s.week}><td><b>W{s.week}</b></td><td>{fmt(s.weight)}</td><td>{prev?delta(s.weight,prev.weight,'kg'):'—'}</td><td>{Number.isFinite(s.calories)?Math.round(s.calories):'—'}</td><td>{fmt(s.strength)}</td><td>{fmt(s.energy)}</td><td>{fmt(s.stress)}</td><td>{fmt(s.sleep)}</td><td>{Number.isFinite(s.steps)?Math.round(s.steps).toLocaleString('nl-NL'):'—'}</td><td>{fmt(s.hip)}</td><td>{fmt(s.navel)}</td></tr>})}</tbody></table></div>}
+function WeekTable({summaries}){return <div className="table-wrap"><table><thead><tr><th>Week</th><th>Gewicht</th><th>Δ</th><th>Kcal</th><th>Kracht</th><th>Energie</th><th>Stress</th><th>Slaap</th><th>Stappen</th><th>Trainingen</th><th>Heup</th><th>Navel</th></tr></thead><tbody>{[...summaries].reverse().map((s,i,arr)=>{const prev=arr[i+1];return <tr key={s.week}><td><b>W{s.week}</b></td><td>{fmt(s.weight)}</td><td>{prev?delta(s.weight,prev.weight,'kg'):'—'}</td><td>{Number.isFinite(s.calories)?Math.round(s.calories):'—'}</td><td>{fmt(s.strength)}</td><td>{fmt(s.energy)}</td><td>{fmt(s.stress)}</td><td>{fmt(s.sleep)}</td><td>{Number.isFinite(s.steps)?Math.round(s.steps).toLocaleString('nl-NL'):'—'}</td><td>{Number.isFinite(s.trainings)?s.trainings:'—'}</td><td>{fmt(s.hip)}</td><td>{fmt(s.navel)}</td></tr>})}</tbody></table></div>}
 function HistoryPage({weeks,summaries,openDay}){
   const latestWeekNo=Math.max(1,...weeks.map(w=>w.week||1))
   const [latestStart]=weekDates(latestWeekNo)

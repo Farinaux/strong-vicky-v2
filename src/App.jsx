@@ -364,7 +364,7 @@ function Dashboard({latest,prev,phase,summaries,setTab,runningWeekNo,runningTrai
       <Kpi label="Gem. stress" value={Number.isFinite(latest?.stress)?`${fmt(latest.stress)} / 10`:'—'} change={delta(latest?.stress,prev?.stress,'')}/>
       <Kpi label="Gem. slaap" value={Number.isFinite(latest?.sleep)?`${fmt(latest.sleep)} uur`:'—'} change={delta(latest?.sleep,prev?.sleep,'uur')}/>
       <Kpi label="Gem. stappen" value={Number.isFinite(latest?.steps)?Math.round(latest.steps).toLocaleString('nl-NL'):'—'} change={delta(latest?.steps,prev?.steps,'')}/>
-      <Kpi label="Krachttraining deze week" value={`${runningTrainings} / 3${runningTrainings>=3?' ✓':''}`} change={`Week ${runningWeekNo} · doel 3 trainingen`}/>
+      <Kpi label="Krachttraining deze week" value={`${runningTrainings} / 3${runningTrainings>=3?' ✓':''}`} change={`Week ${runningWeekNo} · doel 3 trainingen`} status={runningTrainings>=3?'success':'danger'}/>
       <Kpi label="Navel (zondag)" value={Number.isFinite(latest?.navel)?`${fmt(latest.navel)} cm`:'—'} change={delta(latest?.navel,prev?.navel,'cm')}/>
       <Kpi label="Heup (zondag)" value={Number.isFinite(latest?.hip)?`${fmt(latest.hip)} cm`:'—'} change={delta(latest?.hip,prev?.hip,'cm')}/>
       <Kpi label="Huidige fase" value={phase.name} change={phase.kcal}/>
@@ -378,7 +378,14 @@ function Dashboard({latest,prev,phase,summaries,setTab,runningWeekNo,runningTrai
     <section className="quote-card"><span>“CONSISTENCY CREATES CHANGE”</span><em>Same Girl.<br/>Stronger Mindset.</em></section>
   </>
 }
-function Kpi({label,value,change}){return <div className="kpi"><span>{label}</span><strong>{value}</strong><small>{change}</small></div>}
+function Kpi({label,value,change,status}){
+  const statusStyle=status==='success'
+    ? {background:'#e8f5ec',border:'1px solid #8fc79d',color:'#216b35'}
+    : status==='danger'
+      ? {background:'#fdebec',border:'1px solid #e5a1a7',color:'#a32632'}
+      : undefined
+  return <div className="kpi" style={statusStyle}><span>{label}</span><strong>{value}</strong><small>{change}</small></div>
+}
 function Chart({data,suffix=''}){return <div className="chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{top:10,right:12,left:-18,bottom:0}}><CartesianGrid stroke="#eadfda" strokeDasharray="3 3"/><XAxis dataKey="week" tick={{fontSize:12,fill:'#7e706c'}}/><YAxis tick={{fontSize:12,fill:'#7e706c'}} domain={['dataMin - 1','dataMax + 1']}/><Tooltip formatter={v=>[`${String(v).replace('.',',')}${suffix}`,'']}/><Line type="monotone" dataKey="value" stroke="#bd6e7e" strokeWidth={3} dot={{r:4,fill:'#bd6e7e'}} activeDot={{r:6}}/></LineChart></ResponsiveContainer></div>}
 function BarViz({data}){return <div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={data} margin={{top:10,right:10,left:-18,bottom:0}}><CartesianGrid stroke="#eadfda" strokeDasharray="3 3"/><XAxis dataKey="week" tick={{fontSize:12,fill:'#7e706c'}}/><YAxis tick={{fontSize:12,fill:'#7e706c'}}/><Tooltip/><Bar dataKey="value" fill="#bd6e7e" radius={[7,7,0,0]}/></BarChart></ResponsiveContainer></div>}
 function WeekSelector({selected,setSelected,dates}){

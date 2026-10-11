@@ -101,6 +101,10 @@ export default function App(){
   const prev = populatedSummaries.length>1 ? populatedSummaries.at(-2) : null
   const latestWeek = latest?.week || 1
   const phase = phaseForWeek(latestWeek)
+  const todayInfo = weekAndDayForDate(new Date())
+  const runningWeekNo = todayInfo?.week || latestWeek
+  const runningWeek = weeks.find(w=>w.week===runningWeekNo) || emptyWeek(runningWeekNo)
+  const runningTrainings = runningWeek.days.filter(d=>d?.trained===true || d?.trained==='true').length
 
   useEffect(()=>localStorage.setItem('sv2_layout_weeks',JSON.stringify(weeks)),[weeks])
   useEffect(()=>{
@@ -194,14 +198,26 @@ export default function App(){
   }
   function updateDay(i,key,value){
     const weekNo=selectedWeek
+    let showWorkoutGoal=false
     setWeeks(prev=>{
       const arr=[...prev]
       let idx=arr.findIndex(w=>w.week===weekNo)
       if(idx<0){arr.push(emptyWeek(weekNo));idx=arr.length-1}
-      arr[idx]={...arr[idx],days:arr[idx].days.map((d,j)=>j===i?{...d,[key]:value}:d)}
+      const before=arr[idx].days.filter(d=>d?.trained===true || d?.trained==='true').length
+      const nextDays=arr[idx].days.map((d,j)=>j===i?{...d,[key]:value}:d)
+      const after=nextDays.filter(d=>d?.trained===true || d?.trained==='true').length
+      if(key==='trained' && value===true && before===2 && after===3){
+        const popupKey=`sv_workout_goal_week_${weekNo}`
+        if(localStorage.getItem(popupKey)!=='shown'){
+          localStorage.setItem(popupKey,'shown')
+          showWorkoutGoal=true
+        }
+      }
+      arr[idx]={...arr[idx],days:nextDays}
       return arr.sort((a,b)=>a.week-b.week)
     })
     markForAutoSave(weekNo)
+    if(showWorkoutGoal) setTimeout(()=>window.alert('🎉 You did it Vicky!\nFinished 3 workouts! 💪'),0)
   }
   function updateWeek(key,value){
     const weekNo=selectedWeek
@@ -308,7 +324,7 @@ export default function App(){
     </aside>
 
     <main>
-      {tab==='dashboard' && <Dashboard latest={latest} prev={prev} phase={phase} summaries={populatedSummaries} setTab={setTab}/>} 
+      {tab==='dashboard' && <Dashboard latest={latest} prev={prev} phase={phase} summaries={populatedSummaries} setTab={setTab} runningWeekNo={runningWeekNo} runningTrainings={runningTrainings}/>} 
       {tab==='checkin' && <>
         <Hero type="checkin" title="Check-in" subtitle="Jouw dagelijkse gewoonten, jouw resultaat."/>
         <WeekSelector selected={selectedWeek} setSelected={setSelectedWeek} dates={[a,b]}/>
@@ -328,7 +344,7 @@ export default function App(){
 }
 
 function Hero({type,title,subtitle,children}){return <section className={`hero ${type}-hero`}><div className="hero-copy"><h1>{title}</h1><p>{subtitle}</p>{children}</div></section>}
-function Dashboard({latest,prev,phase,summaries,setTab}){
+function Dashboard({latest,prev,phase,summaries,setTab,runningWeekNo,runningTrainings}){
   const week=latest?.week||1; const [a,b]=weekDates(week)
   const firstWith = key => summaries.find(s=>Number.isFinite(s[key]))
   const weightData=summaries.filter(s=>Number.isFinite(s.weight)).map(s=>({week:`W${s.week}`,value:+s.weight.toFixed(2)}))
@@ -348,6 +364,7 @@ function Dashboard({latest,prev,phase,summaries,setTab}){
       <Kpi label="Gem. stress" value={Number.isFinite(latest?.stress)?`${fmt(latest.stress)} / 10`:'—'} change={delta(latest?.stress,prev?.stress,'')}/>
       <Kpi label="Gem. slaap" value={Number.isFinite(latest?.sleep)?`${fmt(latest.sleep)} uur`:'—'} change={delta(latest?.sleep,prev?.sleep,'uur')}/>
       <Kpi label="Gem. stappen" value={Number.isFinite(latest?.steps)?Math.round(latest.steps).toLocaleString('nl-NL'):'—'} change={delta(latest?.steps,prev?.steps,'')}/>
+      <Kpi label="Krachttraining deze week" value={`${runningTrainings} / 3${runningTrainings>=3?' ✓':''}`} change={`Week ${runningWeekNo} · doel 3 trainingen`}/>
       <Kpi label="Navel (zondag)" value={Number.isFinite(latest?.navel)?`${fmt(latest.navel)} cm`:'—'} change={delta(latest?.navel,prev?.navel,'cm')}/>
       <Kpi label="Heup (zondag)" value={Number.isFinite(latest?.hip)?`${fmt(latest.hip)} cm`:'—'} change={delta(latest?.hip,prev?.hip,'cm')}/>
       <Kpi label="Huidige fase" value={phase.name} change={phase.kcal}/>

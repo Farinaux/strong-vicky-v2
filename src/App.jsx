@@ -140,27 +140,39 @@ export default function App(){
   useEffect(()=>{
     if(!autoSaveVersion || dirtyWeekNo == null) return
     const weekNo=dirtyWeekNo
+    // Neem één snapshot van de gewijzigde week. Belangrijk: `weeks` staat bewust
+    // NIET in de dependency-array. Een Supabase realtime-update wijzigt `weeks`
+    // namelijk opnieuw en veroorzaakte daardoor voorheen een eindeloze save-lus.
     const weekToSave=weeks.find(w=>w.week===weekNo)
     if(!weekToSave) return
+    let cancelled=false
     setAutoSaveState('pending')
     const timer=setTimeout(async()=>{
       try{
+        if(cancelled) return
         setAutoSaveState('saving')
         if(user && cloudEnabled){
-          await saveCloud(weekToSave)
+          await Promise.race([
+            saveCloud(weekToSave),
+            new Promise((_,reject)=>setTimeout(()=>reject(new Error('Cloud opslaan duurde te lang')),10000))
+          ])
+          if(cancelled) return
           setLastSync(new Date())
           setSyncState('synced')
         }
+        if(cancelled) return
         setAutoSaveState('saved')
         setAutoSaveAt(new Date())
       }catch(e){
+        if(cancelled) return
         setAutoSaveState('error')
         setSyncState('error')
         setMsg(`Automatisch opslaan mislukt: ${e.message}`)
       }
     },900)
-    return ()=>clearTimeout(timer)
-  },[autoSaveVersion,dirtyWeekNo,weeks,user])
+    return ()=>{ cancelled=true; clearTimeout(timer) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[autoSaveVersion,dirtyWeekNo,user])
   useEffect(()=>{
     if(!cloudEnabled) return
     supabase.auth.getSession().then(({data})=>setUser(data.session?.user||null))

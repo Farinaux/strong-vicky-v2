@@ -409,7 +409,15 @@ export default function App(){
 
 function Hero({type,title,subtitle,children}){return <section className={`hero ${type}-hero`}><div className="hero-copy"><h1>{title}</h1><p>{subtitle}</p>{children}</div></section>}
 function Dashboard({latest,prev,phase,summaries,setTab,runningWeekNo,runningTrainings,runningSteps}){
-  const week=latest?.week||1; const [a,b]=weekDates(week)
+  const maxDashboardWeek=Math.max(1,runningWeekNo,...summaries.map(s=>s.week||1))
+  const [dashboardWeek,setDashboardWeek]=useState(()=>Math.min(runningWeekNo,maxDashboardWeek))
+  useEffect(()=>{ setDashboardWeek(w=>Math.min(Math.max(1,w),maxDashboardWeek)) },[maxDashboardWeek])
+  const shown=summaries.find(s=>s.week===dashboardWeek) || {week:dashboardWeek,trainings:0}
+  const shownPrev=[...summaries].filter(s=>s.week<dashboardWeek).at(-1)
+  const shownPhase=phaseForWeek(dashboardWeek)
+  const [a,b]=weekDates(dashboardWeek)
+  const shownSteps=shown.steps
+  const shownTrainings=Number.isFinite(shown.trainings)?shown.trainings:0
   const firstWith = key => summaries.find(s=>Number.isFinite(s[key]))
   const weightData=summaries.filter(s=>Number.isFinite(s.weight)).map(s=>({week:`W${s.week}`,value:+s.weight.toFixed(2)}))
   const navelData=summaries.filter(s=>Number.isFinite(s.navel)).map(s=>({week:`W${s.week}`,value:s.navel}))
@@ -417,28 +425,32 @@ function Dashboard({latest,prev,phase,summaries,setTab,runningWeekNo,runningTrai
   const kcalData=summaries.filter(s=>Number.isFinite(s.calories)).map(s=>({week:`W${s.week}`,value:Math.round(s.calories)}))
   return <>
     <Hero type="dashboard" title="Goedemorgen Vicky" subtitle="Kleine stappen, grote resultaten.">
-      <button className="week-hero" onClick={()=>setTab('checkin')}><span><b>Week {week}</b><small>{dateShort(a)} t/m {dateShort(b)}</small></span><ChevronRight/></button>
+      <div className="week-hero" style={{cursor:'default'}}>
+        <button type="button" className="secondary" onClick={()=>setDashboardWeek(w=>Math.max(1,w-1))} disabled={dashboardWeek<=1} aria-label="Vorige week"><ChevronLeft/></button>
+        <button type="button" onClick={()=>setTab('checkin')} style={{flex:1,background:'transparent',border:0,textAlign:'left',color:'inherit',padding:'0 12px'}}><span><b>Week {dashboardWeek}</b><small>{dateShort(a)} t/m {dateShort(b)}</small></span></button>
+        <button type="button" className="secondary" onClick={()=>setDashboardWeek(w=>Math.min(maxDashboardWeek,w+1))} disabled={dashboardWeek>=maxDashboardWeek} aria-label="Volgende week"><ChevronRight/></button>
+      </div>
     </Hero>
     <div className="dashboard-section-title"><div><h2>Weekgemiddelden</h2><p>Alleen daadwerkelijk ingevulde dagen worden meegerekend.</p></div></div>
     <section className="kpis">
-      <Kpi label="Gem. gewicht" value={`${fmt(latest?.weight)} kg`} change={delta(latest?.weight,prev?.weight,'kg')}/>
-      <Kpi label="Gem. calorieën" value={Number.isFinite(latest?.calories)?`${Math.round(latest.calories).toLocaleString('nl-NL')} kcal`:'—'} change={delta(latest?.calories,prev?.calories,'kcal')}/>
-      <Kpi label="Gem. kracht" value={Number.isFinite(latest?.strength)?`${fmt(latest.strength)} / 10`:'—'} change={delta(latest?.strength,prev?.strength,'')}/>
-      <Kpi label="Gem. energie" value={Number.isFinite(latest?.energy)?`${fmt(latest.energy)} / 10`:'—'} change={delta(latest?.energy,prev?.energy,'')}/>
-      <Kpi label="Gem. stress" value={Number.isFinite(latest?.stress)?`${fmt(latest.stress)} / 10`:'—'} change={delta(latest?.stress,prev?.stress,'')}/>
-      <Kpi label="Gem. slaap" value={Number.isFinite(latest?.sleep)?`${fmt(latest.sleep)} uur`:'—'} change={delta(latest?.sleep,prev?.sleep,'uur')}/>
-      <Kpi label="Gem. stappen deze week" value={Number.isFinite(runningSteps)?Math.round(runningSteps).toLocaleString('nl-NL'):'—'} change={`Week ${runningWeekNo} · doel 10.000 per dag`} status={Number.isFinite(runningSteps)?(runningSteps>=10000?'success':'danger'):undefined}/>
-      <Kpi label="Krachttraining deze week" value={`${runningTrainings} / 3${runningTrainings>=3?' ✓':''}`} change={`Week ${runningWeekNo} · doel 3 trainingen`} status={runningTrainings>=3?'success':'danger'}/>
-      <Kpi label="Navel (zondag)" value={Number.isFinite(latest?.navel)?`${fmt(latest.navel)} cm`:'—'} change={delta(latest?.navel,prev?.navel,'cm')}/>
-      <Kpi label="Heup (zondag)" value={Number.isFinite(latest?.hip)?`${fmt(latest.hip)} cm`:'—'} change={delta(latest?.hip,prev?.hip,'cm')}/>
-      <Kpi label="Huidige fase" value={phase.name} change={phase.kcal}/>
+      <Kpi label="Gem. gewicht" value={`${fmt(shown?.weight)} kg`} change={delta(shown?.weight,shownPrev?.weight,'kg')}/>
+      <Kpi label="Gem. calorieën" value={Number.isFinite(shown?.calories)?`${Math.round(shown.calories).toLocaleString('nl-NL')} kcal`:'—'} change={delta(shown?.calories,shownPrev?.calories,'kcal')}/>
+      <Kpi label="Gem. kracht" value={Number.isFinite(shown?.strength)?`${fmt(shown.strength)} / 10`:'—'} change={delta(shown?.strength,shownPrev?.strength,'')}/>
+      <Kpi label="Gem. energie" value={Number.isFinite(shown?.energy)?`${fmt(shown.energy)} / 10`:'—'} change={delta(shown?.energy,shownPrev?.energy,'')}/>
+      <Kpi label="Gem. stress" value={Number.isFinite(shown?.stress)?`${fmt(shown.stress)} / 10`:'—'} change={delta(shown?.stress,shownPrev?.stress,'')}/>
+      <Kpi label="Gem. slaap" value={Number.isFinite(shown?.sleep)?`${fmt(shown.sleep)} uur`:'—'} change={delta(shown?.sleep,shownPrev?.sleep,'uur')}/>
+      <Kpi label="Gem. stappen deze week" value={Number.isFinite(shownSteps)?Math.round(shownSteps).toLocaleString('nl-NL'):'—'} change={`Week ${dashboardWeek} · doel 10.000 per dag`} status={Number.isFinite(shownSteps)?(shownSteps>=10000?'success':'danger'):undefined}/>
+      <Kpi label="Krachttraining deze week" value={`${shownTrainings} / 3${shownTrainings>=3?' ✓':''}`} change={`Week ${dashboardWeek} · doel 3 trainingen`} status={shownTrainings>=3?'success':'danger'}/>
+      <Kpi label="Navel (zondag)" value={Number.isFinite(shown?.navel)?`${fmt(shown.navel)} cm`:'—'} change={delta(shown?.navel,shownPrev?.navel,'cm')}/>
+      <Kpi label="Heup (zondag)" value={Number.isFinite(shown?.hip)?`${fmt(shown.hip)} cm`:'—'} change={delta(shown?.hip,shownPrev?.hip,'cm')}/>
+      <Kpi label="Huidige fase" value={shownPhase.name} change={shownPhase.kcal}/>
     </section>
-    <section className="card chart-card large"><div className="card-head"><h2>Gewicht</h2><strong>{Number.isFinite(latest?.weight) ? `${fmt(latest.weight)} kg` : '—'}</strong></div><Chart data={weightData} suffix=" kg"/></section>
+    <section className="card chart-card large"><div className="card-head"><h2>Gewicht</h2><strong>{Number.isFinite(shown?.weight) ? `${fmt(shown.weight)} kg` : '—'}</strong></div><Chart data={weightData} suffix=" kg"/></section>
     <div className="chart-pair">
-      <section className="card chart-card"><div className="card-head"><h2>Navelomvang</h2><strong>{Number.isFinite(latest?.navel) ? `${fmt(latest.navel)} cm` : '—'}</strong></div><Chart data={navelData} suffix=" cm"/></section>
-      <section className="card chart-card"><div className="card-head"><h2>Heupomvang</h2><strong>{Number.isFinite(latest?.hip) ? `${fmt(latest.hip)} cm` : '—'}</strong></div><Chart data={hipData} suffix=" cm"/></section>
+      <section className="card chart-card"><div className="card-head"><h2>Navelomvang</h2><strong>{Number.isFinite(shown?.navel) ? `${fmt(shown.navel)} cm` : '—'}</strong></div><Chart data={navelData} suffix=" cm"/></section>
+      <section className="card chart-card"><div className="card-head"><h2>Heupomvang</h2><strong>{Number.isFinite(shown?.hip) ? `${fmt(shown.hip)} cm` : '—'}</strong></div><Chart data={hipData} suffix=" cm"/></section>
     </div>
-    <section className="card chart-card"><div className="card-head"><h2>Calorieën (gem.)</h2><strong>{Number.isFinite(latest?.calories) ? `${Math.round(latest.calories).toLocaleString('nl-NL')} kcal` : '—'}</strong></div><BarViz data={kcalData}/></section>
+    <section className="card chart-card"><div className="card-head"><h2>Calorieën (gem.)</h2><strong>{Number.isFinite(shown?.calories) ? `${Math.round(shown.calories).toLocaleString('nl-NL')} kcal` : '—'}</strong></div><BarViz data={kcalData}/></section>
     <section className="quote-card"><span>“CONSISTENCY CREATES CHANGE”</span><em>Same Girl.<br/>Stronger Mindset.</em></section>
   </>
 }
